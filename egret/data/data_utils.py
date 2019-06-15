@@ -12,17 +12,21 @@ This module contains several helper functions that are useful when
 modifying the data dictionary
 """
 import egret.model_library.transmission.tx_calc as tx_calc
-from egret.model_library.defn import BasePointType, ApproximationType
+import egret.model_library.transmission.tx_opt as tx_opt
+from egret.model_library.defn import BasePointType, ApproximationType, SensitivityCalculationMethod
 import numpy as np
 
-def create_dicts_of_ptdf(md,base_point=BasePointType.FLATSTART):
+def create_dicts_of_ptdf(md,base_point=BasePointType.FLATSTART, calculation_method=SensitivityCalculationMethod.INVERT):
     branches = dict(md.elements(element_type='branch'))
     buses = dict(md.elements(element_type='bus'))
     branch_attrs = md.attributes(element_type='branch')
     bus_attrs = md.attributes(element_type='bus')
 
     reference_bus = md.data['system']['reference_bus']
-    ptdf = tx_calc.calculate_ptdf(branches,buses,branch_attrs['names'],bus_attrs['names'],reference_bus,base_point)
+    if calculation_method == SensitivityCalculationMethod.INVERT:
+        ptdf = tx_calc.calculate_ptdf(branches,buses,branch_attrs['names'],bus_attrs['names'],reference_bus,base_point)
+    elif calculation_method == SensitivityCalculationMethod.DUAL:
+        ptdf = tx_opt.calculate_ptdf(branches,buses,branch_attrs['names'],bus_attrs['names'],reference_bus,base_point)
 
     _len_bus = len(bus_attrs['names'])
     _len_branch = len(branch_attrs['names'])
@@ -55,3 +59,4 @@ def create_dicts_of_ptdf_losses(md,base_point=BasePointType.SOLUTION):
         branch['ldf'] = _row_ldf
 
         branch['ldf_c'] = ldf_c[idx]
+

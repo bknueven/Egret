@@ -281,6 +281,7 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False):
 
     return model, md
 
+
 def solve_dcopf(model_data,
                 solver,
                 timelimit = None,

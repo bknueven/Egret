@@ -8,7 +8,7 @@
 #  ___________________________________________________________________________
 
 """
-This module provides functions that create the modules for typical ACOPF formulations.
+This module provides functions that create the modules for typical ACPF formulations.
 
 #TODO: document this with examples
 """
@@ -54,7 +54,7 @@ def _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, bus_q_l
     return p_rhs_kwargs, q_rhs_kwargs, penalty_expr
 
 
-def create_psv_acopf_model(model_data, include_feasibility_slack=False):
+def create_psv_acpf_model(model_data, include_feasibility_slack=False):
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
@@ -109,7 +109,7 @@ def create_psv_acopf_model(model_data, include_feasibility_slack=False):
 
     ref_angle = md.data['system']['reference_bus_angle']
     if ref_angle != 0.0:
-        raise ValueError('The RIV ACOPF formulation currently only supports'
+        raise ValueError('The RIV ACPF formulation currently only supports'
                          ' a reference bus angle of 0 degrees, but an angle'
                          ' of {} degrees was found.'.format(ref_angle))
 
@@ -127,17 +127,7 @@ def create_psv_acopf_model(model_data, include_feasibility_slack=False):
     ### declare the current flows in the branches
     vr_init = {k: bus_attrs['vm'][k] * pe.cos(bus_attrs['va'][k]) for k in bus_attrs['vm']}
     vj_init = {k: bus_attrs['vm'][k] * pe.sin(bus_attrs['va'][k]) for k in bus_attrs['vm']}
-    s_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
-    s_lbub = dict()
-    for k in branches.keys():
-        if s_max[k] is None:
-            s_lbub[k] = (None, None)
-        else:
-            s_lbub[k] = (-s_max[k],s_max[k])
-    pf_bounds = s_lbub
-    pt_bounds = s_lbub
-    qf_bounds = s_lbub
-    qt_bounds = s_lbub
+
     pf_init = dict()
     pt_init = dict()
     qf_init = dict()
@@ -161,23 +151,22 @@ def create_psv_acopf_model(model_data, include_feasibility_slack=False):
 
     libbranch.declare_var_pf(model=model,
                              index_set=branch_attrs['names'],
-                             initialize=pf_init,
-                             bounds=pf_bounds
+                             initialize=pf_init
                              )
+
     libbranch.declare_var_pt(model=model,
                              index_set=branch_attrs['names'],
-                             initialize=pt_init,
-                             bounds=pt_bounds
+                             initialize=pt_init
                              )
+
     libbranch.declare_var_qf(model=model,
                              index_set=branch_attrs['names'],
-                             initialize=qf_init,
-                             bounds=qf_bounds
+                             initialize=qf_init
                              )
+
     libbranch.declare_var_qt(model=model,
                              index_set=branch_attrs['names'],
-                             initialize=qt_init,
-                             bounds=qt_bounds
+                             initialize=qt_init
                              )
 
     ### declare the branch power flow constraints
@@ -211,47 +200,12 @@ def create_psv_acopf_model(model_data, include_feasibility_slack=False):
                                 **q_rhs_kwargs
                                 )
 
-    ### declare the thermal limits
-    libbranch.declare_ineq_s_branch_thermal_limit(model=model,
-                                                  index_set=branch_attrs['names'],
-                                                  branches=branches,
-                                                  s_thermal_limits=s_max,
-                                                  flow_type=FlowType.POWER
-                                                  )
-
-    ### declare the voltage min and max inequalities
-    libbus.declare_ineq_vm_bus_lbub(model=model,
-                                    index_set=bus_attrs['names'],
-                                    buses=buses,
-                                    coordinate_type=CoordinateType.POLAR
-                                    )
-
-    ### declare angle difference limits on interconnected buses
-    libbranch.declare_ineq_angle_diff_branch_lbub(model=model,
-                                                  index_set=branch_attrs['names'],
-                                                  branches=branches,
-                                                  coordinate_type=CoordinateType.POLAR
-                                                  )
-
-    ### declare the generator cost objective
-    libgen.declare_expression_pgqg_operating_cost(model=model,
-                                                  index_set=gen_attrs['names'],
-                                                  p_costs=gen_attrs['p_cost'],
-                                                  q_costs=gen_attrs.get('q_cost', None)
-                                                  )
-
-    obj_expr = sum(model.pg_operating_cost[gen_name] for gen_name in model.pg_operating_cost)
-    if include_feasibility_slack:
-        obj_expr += penalty_expr
-    if hasattr(model, 'qg_operating_cost'):
-        obj_expr += sum(model.qg_operating_cost[gen_name] for gen_name in model.qg_operating_cost)
-
-    model.obj = pe.Objective(expr=obj_expr)
+    model.obj = pe.Objective(expr=0.0)
 
     return model, md
 
 
-def create_rsv_acopf_model(model_data, include_feasibility_slack=False):
+def create_rsv_acpf_model(model_data, include_feasibility_slack=False):
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
@@ -309,7 +263,7 @@ def create_rsv_acopf_model(model_data, include_feasibility_slack=False):
 
     ref_angle = md.data['system']['reference_bus_angle']
     if ref_angle != 0.0:
-        raise ValueError('The RSV ACOPF formulation currently only supports'
+        raise ValueError('The RSV ACPF formulation currently only supports'
                          ' a reference bus angle of 0 degrees, but an angle'
                          ' of {} degrees was found.'.format(ref_angle))
 
@@ -409,14 +363,6 @@ def create_rsv_acopf_model(model_data, include_feasibility_slack=False):
                                 **q_rhs_kwargs
                                 )
 
-    ### declare the thermal limits
-    libbranch.declare_ineq_s_branch_thermal_limit(model=model,
-                                                  index_set=branch_attrs['names'],
-                                                  branches=branches,
-                                                  s_thermal_limits=s_max,
-                                                  flow_type=FlowType.POWER
-                                                  )
-
     ### declare the voltage min and max inequalities
     libbus.declare_ineq_vm_bus_lbub(model=model,
                                     index_set=bus_attrs['names'],
@@ -424,32 +370,12 @@ def create_rsv_acopf_model(model_data, include_feasibility_slack=False):
                                     coordinate_type=CoordinateType.RECTANGULAR
                                     )
 
-    ### declare angle difference limits on interconnected buses
-    libbranch.declare_ineq_angle_diff_branch_lbub(model=model,
-                                                  index_set=branch_attrs['names'],
-                                                  branches=branches,
-                                                  coordinate_type=CoordinateType.RECTANGULAR
-                                                  )
-
-    ### declare the generator cost objective
-    libgen.declare_expression_pgqg_operating_cost(model=model,
-                                                  index_set=gen_attrs['names'],
-                                                  p_costs=gen_attrs['p_cost'],
-                                                  q_costs=gen_attrs.get('q_cost', None)
-                                                  )
-
-    obj_expr = sum(model.pg_operating_cost[gen_name] for gen_name in model.pg_operating_cost)
-    if include_feasibility_slack:
-        obj_expr += penalty_expr
-    if hasattr(model, 'qg_operating_cost'):
-        obj_expr += sum(model.qg_operating_cost[gen_name] for gen_name in model.qg_operating_cost)
-
-    model.obj = pe.Objective(expr=obj_expr)
+    model.obj = pe.Objective(expr=0.0)
 
     return model, md
 
 
-def create_riv_acopf_model(model_data, include_feasibility_slack=False):
+def create_riv_acpf_model(model_data, include_feasibility_slack=False):
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
@@ -507,7 +433,7 @@ def create_riv_acopf_model(model_data, include_feasibility_slack=False):
 
     ref_angle = md.data['system']['reference_bus_angle']
     if ref_angle != 0.0:
-        raise ValueError('The RIV ACOPF formulation currently only supports'
+        raise ValueError('The RIV ACPF formulation currently only supports'
                          ' a reference bus angle of 0 degrees, but an angle'
                          ' of {} degrees was found.'.format(ref_angle))
 
@@ -633,14 +559,6 @@ def create_riv_acopf_model(model_data, include_feasibility_slack=False):
                                                    **q_rhs_kwargs
                                                    )
 
-    ### declare the thermal limits
-    libbranch.declare_ineq_s_branch_thermal_limit(model=model,
-                                                  index_set=branch_attrs['names'],
-                                                  branches=branches,
-                                                  s_thermal_limits=s_max,
-                                                  flow_type=FlowType.CURRENT
-                                                  )
-
     ### declare the voltage min and max inequalities
     libbus.declare_ineq_vm_bus_lbub(model=model,
                                     index_set=bus_attrs['names'],
@@ -648,34 +566,62 @@ def create_riv_acopf_model(model_data, include_feasibility_slack=False):
                                     coordinate_type=CoordinateType.RECTANGULAR
                                     )
 
-    ### declare angle difference limits on interconnected buses
-    libbranch.declare_ineq_angle_diff_branch_lbub(model=model,
-                                                  index_set=branch_attrs['names'],
-                                                  branches=branches,
-                                                  coordinate_type=CoordinateType.RECTANGULAR
-                                                  )
-
-    ### declare the generator cost objective
-    libgen.declare_expression_pgqg_operating_cost(model=model,
-                                                  index_set=gen_attrs['names'],
-                                                  p_costs=gen_attrs['p_cost'],
-                                                  q_costs=gen_attrs.get('q_cost', None)
-                                                  )
-
-    obj_expr = sum(model.pg_operating_cost[gen_name] for gen_name in model.pg_operating_cost)
-    if include_feasibility_slack:
-        obj_expr += penalty_expr
-    if hasattr(model, 'qg_operating_cost'):
-        obj_expr += sum(model.qg_operating_cost[gen_name] for gen_name in model.qg_operating_cost)
-
-    model.obj = pe.Objective(expr=obj_expr)
+    model.obj = pe.Objective(expr=0.0)
 
     return model, md
 
 
-def _load_solution_to_model_data(m, md):
+def solve_acpf(model_data,
+                solver,
+                timelimit = None,
+                solver_tee = True,
+                symbolic_solver_labels = False,
+                options = None,
+                acpf_model_generator = create_psv_acpf_model,
+                return_model = False,
+                return_results = False,
+                **kwargs):
+    '''
+    Create and solve a new acpf model
+
+    Parameters
+    ----------
+    model_data : egret.data.ModelData
+        An egret ModelData object with the appropriate data loaded.
+    solver : str or pyomo.opt.base.solvers.OptSolver
+        Either a string specifying a pyomo solver name, or an instantiated pyomo solver
+    timelimit : float (optional)
+        Time limit for dcopf run. Default of None results in no time
+        limit being set.
+    solver_tee : bool (optional)
+        Display solver log. Default is True.
+    symbolic_solver_labels : bool (optional)
+        Use symbolic solver labels. Useful for debugging; default is False.
+    options : dict (optional)
+        Other options to pass into the solver. Default is dict().
+    acpf_model_generator : function (optional)
+        Function for generating the acpf model. Default is
+        egret.models.acpf.create_psv_acpf_model
+    return_model : bool (optional)
+        If True, returns the pyomo model object
+    return_results : bool (optional)
+        If True, returns the pyomo results object
+    kwargs : dictionary (optional)
+        Additional arguments for building model
+    '''
+
+    import pyomo.environ as pe
     from pyomo.environ import value
-    from egret.model_library.transmission.tx_utils import unscale_ModelData_to_pu
+    from egret.common.solver_interface import _solve_model
+    from egret.model_library.transmission.tx_utils import \
+        scale_ModelData_to_pu, unscale_ModelData_to_pu
+
+    m, md = acpf_model_generator(model_data, **kwargs)
+
+    m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
+
+    m, results = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
+                              symbolic_solver_labels=symbolic_solver_labels,options=options)
 
     # save results data to ModelData object
     gens = dict(md.elements(element_type='generator'))
@@ -716,59 +662,6 @@ def _load_solution_to_model_data(m, md):
 
     unscale_ModelData_to_pu(md, inplace=True)
 
-    return
-
-def solve_acopf(model_data,
-                solver,
-                timelimit = None,
-                solver_tee = True,
-                symbolic_solver_labels = False,
-                options = None,
-                acopf_model_generator = create_psv_acopf_model,
-                return_model = False,
-                return_results = False,
-                **kwargs):
-    '''
-    Create and solve a new acopf model
-
-    Parameters
-    ----------
-    model_data : egret.data.ModelData
-        An egret ModelData object with the appropriate data loaded.
-    solver : str or pyomo.opt.base.solvers.OptSolver
-        Either a string specifying a pyomo solver name, or an instantiated pyomo solver
-    timelimit : float (optional)
-        Time limit for dcopf run. Default of None results in no time
-        limit being set.
-    solver_tee : bool (optional)
-        Display solver log. Default is True.
-    symbolic_solver_labels : bool (optional)
-        Use symbolic solver labels. Useful for debugging; default is False.
-    options : dict (optional)
-        Other options to pass into the solver. Default is dict().
-    acopf_model_generator : function (optional)
-        Function for generating the acopf model. Default is
-        egret.models.acopf.create_psv_acopf_model
-    return_model : bool (optional)
-        If True, returns the pyomo model object
-    return_results : bool (optional)
-        If True, returns the pyomo results object
-    kwargs : dictionary (optional)
-        Additional arguments for building model
-    '''
-
-    import pyomo.environ as pe
-    from egret.common.solver_interface import _solve_model
-
-    m, md = acopf_model_generator(model_data, **kwargs)
-
-    m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
-
-    m, results = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
-                              symbolic_solver_labels=symbolic_solver_labels,options=options)
-
-    _load_solution_to_model_data(m, md)
-
     if return_model and return_results:
         return md, m, results
     elif return_model:
@@ -786,5 +679,5 @@ def solve_acopf(model_data,
 #     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
 #     md = create_ModelData(matpower_file)
 #     kwargs = {'include_feasibility_slack':'True'}
-#     md = solve_acopf(md, "ipopt",**kwargs)
+#     md = solve_acpf(md, "ipopt",**kwargs)
 #
