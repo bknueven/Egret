@@ -173,6 +173,8 @@ def _solve_fixed_acpf(m, md):
 
     m, results = _solve_model(m,"ipopt")
     _load_solution_to_model_data(m, md)
+    tx_utils.scale_ModelData_to_pu(md, inplace=True)
+    return
 
 
 if __name__ == '__main__':
