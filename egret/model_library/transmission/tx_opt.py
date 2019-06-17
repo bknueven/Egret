@@ -164,7 +164,8 @@ def calculate_qldf(model_data):
     Calculates the sensitivity of the voltage magnitude to reactive power losses
     """
     kwargs = {'return_model':'True', 'return_results':'True', 'include_feasibility_slack':'False'}
-    md, m, results = solve_dcopf(model_data, "ipopt", dcopf_model_generator=create_btheta_dcopf_model, **kwargs)
+    #md, m, results = solve_dcopf(model_data, "ipopt", dcopf_model_generator=create_btheta_dcopf_model, **kwargs)
+    md, m, results = solve_acopf(model_data, "ipopt", acopf_model_generator=create_psv_acopf_model, **kwargs)
 
     m, md = create_psv_acpf_model(md)
     _solve_fixed_acpf(m, md)
@@ -177,25 +178,6 @@ def calculate_qldf(model_data):
 
     for k, k_dict in branches.items():
         k_dict['qfl'] = k_dict['qf'] + k_dict['qt']
-
-        branch = branches[k]
-        from_bus = branch['from_bus']
-        to_bus = branch['to_bus']
-
-        tau = 1.0
-        shift = 0.0
-        if branch['branch_type'] == 'transformer':
-            tau = branch['transformer_tap_ratio']
-            shift = radians(branch['transformer_phase_shift'])
-        g = tx_calc.calculate_conductance(branch)
-        b = tx_calc.calculate_susceptance(branch)
-        bc = branch['charging_susceptance']
-        vn = buses[from_bus]['vm']
-        vm = buses[to_bus]['vm']
-        tn = buses[from_bus]['va']
-        tm = buses[to_bus]['va']
-
-        #k_dict['qf'] = -0.5*(b + bc/2)*(vn**2/tau**2 - vm**2) - tau*vn*vm*g*sin(tn-tm-shift)
         k_dict['qf'] = (k_dict['qf'] - k_dict['qt'])/2
 
     m, md = _dual_qldf_model(md)
@@ -213,8 +195,7 @@ def calculate_qldf(model_data):
     for _k, branch_name in _mapping_branch.items():
         if hasattr(m,"objective"):
             m.del_component(m.objective)
-        #m.objective = pe.Objective(expr=m.qfl_pos[branch_name] + m.qfl_neg[branch_name])
-        m.objective = pe.Objective(expr=m.qfl[branch_name])
+        m.objective = pe.Objective(expr=-m.qfl[branch_name])
         m, results = _solve_model(m, "gurobi")
         for _b, bus_name in _mapping_bus.items():
             qldf[_k,_b] = m.dual.get(m.eq_q_balance[bus_name])
@@ -481,12 +462,6 @@ def _dual_qtdf_model(md):
                           bounds=zip_items(bus_attrs['v_min'], bus_attrs['v_max'])
                           )
 
-    va_bounds = {k: (-pi, pi) for k in bus_attrs['va']}
-    libbus.declare_var_va(m, bus_attrs['names'], initialize=bus_attrs['va'],
-                          bounds=va_bounds
-                          )
-    m.va.fix()
-
     libbranch.declare_var_qf(model=m,
                              index_set=branch_attrs['names']
                              )
@@ -587,12 +562,6 @@ def _dual_qldf_model(md):
                           bounds=zip_items(bus_attrs['v_min'], bus_attrs['v_max'])
                           )
 
-    va_bounds = {k: (-pi, pi) for k in bus_attrs['va']}
-    libbus.declare_var_va(m, bus_attrs['names'], initialize=bus_attrs['va'],
-                          bounds=va_bounds
-                          )
-    m.va.fix()
-
     libbranch.declare_var_qf(model=m, index_set=branch_attrs['names'], initialize=branch_attrs['qf'])
 
     decl.declare_var('qfl', model=m, index_set=branch_attrs['names'], initialize=branch_attrs['qfl'])
@@ -614,7 +583,7 @@ def _dual_qldf_model(md):
     gens_by_bus = tx_utils.gens_by_bus(buses, gens)
 
     for bus_name in con_set:
-        q_expr = +sum([m.qf[branch_name] for branch_name in outlet_branches_by_bus[bus_name]])
+        q_expr = sum([m.qf[branch_name] for branch_name in outlet_branches_by_bus[bus_name]])
         q_expr -= sum([m.qf[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
 
         q_expr -= 0.5 * sum(m.qfl[branch_name] for branch_name in outlet_branches_by_bus[bus_name])

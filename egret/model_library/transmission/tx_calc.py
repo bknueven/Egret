@@ -448,7 +448,7 @@ def _calculate_L22(branches,buses,index_set_branch,index_set_bus,base_point=Base
         L22[idx_row][idx_col] = -2 * (b + bc/2)/tau**2 * vn + 2 * b/tau * vm * cos(tn - tm - shift)
 
         idx_col = [key for key, value in _mapping_bus.items() if value == to_bus][0]
-        L22[idx_row][idx_col] = -2 * (b + bc/2) * vn + 2 * b/tau * vm * cos(tn - tm - shift)
+        L22[idx_row][idx_col] = -2 * (b + bc/2) * vm + 2 * b/tau * vn * cos(tn - tm - shift)
 
     return L22
 
