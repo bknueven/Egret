@@ -14,7 +14,7 @@ import os
 import math
 import unittest
 from pyomo.opt import SolverFactory, TerminationCondition
-from egret.models.dcopf_losses import *
+from egret.models.dcopf_losses import solve_dcopf_losses, create_btheta_losses_dcopf_model, create_ptdf_losses_dcopf_model
 from egret.data.model_data import ModelData
 from parameterized import parameterized
 from egret.parsers.matpower_parser import create_ModelData

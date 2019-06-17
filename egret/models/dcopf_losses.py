@@ -407,7 +407,7 @@ if __name__ == '__main__':
     from egret.parsers.matpower_parser import create_ModelData
 
     path = os.path.dirname(__file__)
-    case = 'pglib_opf_case30_ieee'
+    case = 'pglib_opf_case3_lmbd'
     filename = case + '.m'
     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
     md = create_ModelData(matpower_file)
@@ -415,7 +415,7 @@ if __name__ == '__main__':
 
     from acopf import solve_acopf
     model_data, model, results = solve_acopf(md, "ipopt", return_model=True, return_results=True)
-    kwargs = {'include_feasibility_slack': 'True'}
-    md = solve_dcopf_losses(model_data, "gurobi", dcopf_losses_model_generator=create_btheta_losses_dcopf_model, **kwargs)
-
+    kwargs = {'include_feasibility_slack': 'False'}
+    model_data, model, results = solve_dcopf_losses(model_data, "gurobi", dcopf_losses_model_generator=create_ptdf_losses_dcopf_model, return_model=True, return_results=True, **kwargs)
+    model.pprint()
 

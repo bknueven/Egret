@@ -14,11 +14,10 @@ This module provides functions that create the modules for typical DCOPF formula
 """
 import pyomo.environ as pe
 import egret.model_library.transmission.tx_utils as tx_utils
-import egret.model_library.transmission.tx_calc as tx_calc
+from egret.model_library.transmission.tx_calc import calculate_y_matrix_from_branch, calculate_ifr, calculate_ifj, calculate_p
 import egret.model_library.transmission.bus as libbus
 import egret.model_library.transmission.branch as libbranch
 import egret.model_library.transmission.gen as libgen
-
 import egret.data.data_utils as data_utils
 from egret.model_library.defn import CoordinateType, ApproximationType
 from egret.data.model_data import map_items, zip_items
@@ -112,12 +111,12 @@ def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, inclu
     for branch_name, branch in branches.items():
         from_bus = branch['from_bus']
         to_bus = branch['to_bus']
-        y_matrix = tx_calc.calculate_y_matrix_from_branch(branch)
-        ifr_init = tx_calc.calculate_ifr(vr_init[from_bus], vj_init[from_bus], vr_init[to_bus],
+        y_matrix = calculate_y_matrix_from_branch(branch)
+        ifr_init = calculate_ifr(vr_init[from_bus], vj_init[from_bus], vr_init[to_bus],
                                          vj_init[to_bus], y_matrix)
-        ifj_init = tx_calc.calculate_ifj(vr_init[from_bus], vj_init[from_bus], vr_init[to_bus],
+        ifj_init = calculate_ifj(vr_init[from_bus], vj_init[from_bus], vr_init[to_bus],
                                          vj_init[to_bus], y_matrix)
-        pf_init[branch_name] = tx_calc.calculate_p(ifr_init, ifj_init, vr_init[from_bus], vj_init[from_bus])
+        pf_init[branch_name] = calculate_p(ifr_init, ifj_init, vr_init[from_bus], vj_init[from_bus])
 
     libbranch.declare_var_pf(model=model,
                              index_set=branch_attrs['names'],
@@ -228,12 +227,12 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False):
     for branch_name, branch in branches.items():
         from_bus = branch['from_bus']
         to_bus = branch['to_bus']
-        y_matrix = tx_calc.calculate_y_matrix_from_branch(branch)
-        ifr_init = tx_calc.calculate_ifr(vr_init[from_bus], vj_init[from_bus], vr_init[to_bus],
+        y_matrix = calculate_y_matrix_from_branch(branch)
+        ifr_init = calculate_ifr(vr_init[from_bus], vj_init[from_bus], vr_init[to_bus],
                                          vj_init[to_bus], y_matrix)
-        ifj_init = tx_calc.calculate_ifj(vr_init[from_bus], vj_init[from_bus], vr_init[to_bus],
+        ifj_init = calculate_ifj(vr_init[from_bus], vj_init[from_bus], vr_init[to_bus],
                                          vj_init[to_bus], y_matrix)
-        pf_init[branch_name] = tx_calc.calculate_p(ifr_init, ifj_init, vr_init[from_bus], vj_init[from_bus])
+        pf_init[branch_name] = calculate_p(ifr_init, ifj_init, vr_init[from_bus], vj_init[from_bus])
 
     libbranch.declare_var_pf(model=model,
                              index_set=branch_attrs['names'],

@@ -12,7 +12,7 @@ This module contains several helper functions that are useful when
 modifying the data dictionary
 """
 import egret.model_library.transmission.tx_calc as tx_calc
-import egret.model_library.transmission.tx_opt as tx_opt
+#from egret.model_library.transmission.tx_opt import calculate_ptdf
 from egret.model_library.defn import BasePointType, ApproximationType, SensitivityCalculationMethod
 import numpy as np
 
@@ -26,7 +26,7 @@ def create_dicts_of_ptdf(md,base_point=BasePointType.FLATSTART, calculation_meth
     if calculation_method == SensitivityCalculationMethod.INVERT:
         ptdf = tx_calc.calculate_ptdf(branches,buses,branch_attrs['names'],bus_attrs['names'],reference_bus,base_point)
     elif calculation_method == SensitivityCalculationMethod.DUAL:
-        ptdf = tx_opt.calculate_ptdf(branches,buses,branch_attrs['names'],bus_attrs['names'],reference_bus,base_point)
+        ptdf = calculate_ptdf(branches,buses,branch_attrs['names'],bus_attrs['names'],reference_bus,base_point)
 
     _len_bus = len(bus_attrs['names'])
     _len_branch = len(branch_attrs['names'])
