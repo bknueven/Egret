@@ -155,6 +155,31 @@ def declare_eq_p_balance_ed(model, index_set, bus_p_loads, gens_by_bus, bus_gs_f
     m.eq_p_balance = pe.Constraint(expr = p_expr == 0.0)
 
 
+def declare_eq_q_balance_ed(model, index_set, bus_q_loads, gens_by_bus, bus_bs_fixed_shunts, **rhs_kwargs):
+    """
+    Create the equality constraints for the reactive power balance
+    at a bus using the variables for real power flows, respectively.
+
+    NOTE: Equation build orientates constants to the RHS in order to compute the correct dual variable sign
+    """
+    m = model
+
+    q_expr = sum(m.qg[gen_name] for bus_name in index_set for gen_name in gens_by_bus[bus_name])
+    q_expr -= sum(m.ql[bus_name] for bus_name in index_set if bus_q_loads[bus_name] is not None)
+    q_expr += sum(bus_bs_fixed_shunts[bus_name] for bus_name in index_set if bus_bs_fixed_shunts[bus_name] != 0.0)
+
+    if rhs_kwargs:
+        for idx,val in rhs_kwargs.items():
+            if idx == 'include_feasibility_slack_pos':
+                q_expr -= eval("m." + val)
+            if idx == 'include_feasibility_slack_neg':
+                q_expr += eval("m." + val)
+            if idx == 'include_losses':
+                q_expr -= sum(m.qfl[branch_name] for branch_name in val)
+
+    m.eq_q_balance = pe.Constraint(expr = q_expr == 0.0)
+
+
 def declare_eq_p_balance_dc_approx(model, index_set,
                                    bus_p_loads,
                                    gens_by_bus,
@@ -392,3 +417,38 @@ def declare_ineq_vm_bus_lbub(model, index_set, buses, coordinate_type=Coordinate
                 buses[bus_name]['v_min']**2 <= m.vr[bus_name]**2 + m.vj[bus_name]**2
             m.ineq_vm_bus_ub[bus_name] = \
                 m.vr[bus_name]**2 + m.vj[bus_name]**2 <= buses[bus_name]['v_max']**2
+
+
+def declare_eq_vm_fdf(model, index_set, buses, bus_q_loads, gens_by_bus, bus_bs_fixed_shunts, vdf_tol = None):
+    """
+    Create the inequalities for the voltage magnitudes from the
+    voltage variables
+    """
+    m = model
+    con_set = decl.declare_set('_con_eq_vm_fdf',
+                               model=model, index_set=index_set)
+
+    m.eq_vm_fdf = pe.Constraint(con_set)
+
+    for _bus_name in con_set:
+        bus = buses[_bus_name]
+        expr = 0
+
+        vdf = bus['vdf']
+        for bus_name, coef in vdf.items():
+            if vdf_tol and abs(coef) < vdf_tol:
+                coef = 0.
+
+            if bus_bs_fixed_shunts[bus_name] != 0.0:
+                expr -= coef * bus_bs_fixed_shunts[bus_name]
+
+            if bus_q_loads[bus_name] != 0.0:
+                expr += coef * m.ql[bus_name]
+
+            for gen_name in gens_by_bus[bus_name]:
+                expr -= coef * m.qg[gen_name]
+
+        expr += bus['vdf_c']
+
+        m.eq_vm_fdf[_bus_name] = \
+            m.vm[_bus_name] == expr

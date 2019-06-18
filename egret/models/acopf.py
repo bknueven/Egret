@@ -109,7 +109,7 @@ def create_psv_acopf_model(model_data, include_feasibility_slack=False):
 
     ref_angle = md.data['system']['reference_bus_angle']
     if ref_angle != 0.0:
-        raise ValueError('The RIV ACOPF formulation currently only supports'
+        raise ValueError('The PSV ACOPF formulation currently only supports'
                          ' a reference bus angle of 0 degrees, but an angle'
                          ' of {} degrees was found.'.format(ref_angle))
 
@@ -692,6 +692,7 @@ def _load_solution_to_model_data(m, md):
         b_dict['lmp'] = value(m.dual[m.eq_p_balance[b]])
         b_dict['qlmp'] = value(m.dual[m.eq_q_balance[b]])
         b_dict['pl'] = value(m.pl[b])
+        b_dict['ql'] = value(m.ql[b])
         if hasattr(m, 'vj'):
             b_dict['vm'] = tx_calc.calculate_vm_from_vj_vr(value(m.vj[b]), value(m.vr[b]))
             b_dict['va'] = tx_calc.calculate_va_from_vj_vr(value(m.vj[b]), value(m.vr[b]))
@@ -764,7 +765,7 @@ def solve_acopf(model_data,
 
     m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
 
-    m, results = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
+    m, results, _ = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
                               symbolic_solver_labels=symbolic_solver_labels,options=options)
 
     _load_solution_to_model_data(m, md)
@@ -777,14 +778,14 @@ def solve_acopf(model_data,
         return md, results
     return md
 
-# if __name__ == '__main__':
-#     import os
-#     from egret.parsers.matpower_parser import create_ModelData
-#
-#     path = os.path.dirname(__file__)
-#     filename = 'pglib_opf_case3_lmbd.m'
-#     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
-#     md = create_ModelData(matpower_file)
-#     kwargs = {'include_feasibility_slack':'True'}
-#     md = solve_acopf(md, "ipopt",**kwargs)
-#
+if __name__ == '__main__':
+    import os
+    from egret.parsers.matpower_parser import create_ModelData
+
+    path = os.path.dirname(__file__)
+    filename = 'pglib_opf_case300_ieee.m'
+    matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
+    md = create_ModelData(matpower_file)
+    kwargs = {'include_feasibility_slack':'True'}
+    md = solve_acopf(md, "ipopt",**kwargs)
+

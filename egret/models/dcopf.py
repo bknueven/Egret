@@ -18,7 +18,7 @@ from egret.model_library.transmission.tx_calc import calculate_y_matrix_from_bra
 import egret.model_library.transmission.bus as libbus
 import egret.model_library.transmission.branch as libbranch
 import egret.model_library.transmission.gen as libgen
-import egret.data.data_utils as data_utils
+from egret.data.data_utils import create_dicts_of_ptdf
 from egret.model_library.defn import CoordinateType, ApproximationType
 from egret.data.model_data import map_items, zip_items
 from egret.models.copperplate_dispatch import _include_system_feasibility_slack
@@ -177,7 +177,7 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False):
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
-    data_utils.create_dicts_of_ptdf(md)
+    create_dicts_of_ptdf(md)
 
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))

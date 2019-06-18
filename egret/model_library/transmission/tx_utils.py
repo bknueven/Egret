@@ -14,7 +14,6 @@ working with transmission models
 
 import egret.model_library.transmission.tx_calc as tx_calc
 
-
 def dicts_of_vr_vj(buses):
     """
     Create dictionaries of vr and vj values from the bus vm and va values
