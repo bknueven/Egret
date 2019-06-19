@@ -769,6 +769,8 @@ def solve_acopf(model_data,
                               symbolic_solver_labels=symbolic_solver_labels,options=options)
 
     _load_solution_to_model_data(m, md)
+    #m.pprint()
+    m.vm.pprint()
 
     if return_model and return_results:
         return md, m, results
@@ -783,9 +785,9 @@ if __name__ == '__main__':
     from egret.parsers.matpower_parser import create_ModelData
 
     path = os.path.dirname(__file__)
-    filename = 'pglib_opf_case300_ieee.m'
+    filename = 'pglib_opf_case3_lmbd.m'
     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
     md = create_ModelData(matpower_file)
-    kwargs = {'include_feasibility_slack':'True'}
+    kwargs = {'include_feasibility_slack':False}
     md = solve_acopf(md, "ipopt",**kwargs)
 

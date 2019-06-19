@@ -14,7 +14,7 @@ typically used for buses (including loads and shunts)
 import pyomo.environ as pe
 import egret.model_library.decl as decl
 from egret.model_library.defn import FlowType, CoordinateType, ApproximationType
-
+from pyomo.environ import value
 
 def declare_var_vr(model, index_set, **kwargs):
     """
@@ -155,7 +155,32 @@ def declare_eq_p_balance_ed(model, index_set, bus_p_loads, gens_by_bus, bus_gs_f
     m.eq_p_balance = pe.Constraint(expr = p_expr == 0.0)
 
 
-def declare_eq_q_balance_ed(model, index_set, bus_q_loads, gens_by_bus, bus_bs_fixed_shunts, **rhs_kwargs):
+def declare_eq_p_balance_fdf(model, index_set, buses, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts, **rhs_kwargs):
+    """
+    Create the equality constraints for the real power balance
+    at a bus using the variables for real power flows, respectively.
+
+    NOTE: Equation build orientates constants to the RHS in order to compute the correct dual variable sign
+    """
+    m = model
+
+    p_expr = sum(m.pg[gen_name] for bus_name in index_set for gen_name in gens_by_bus[bus_name])
+    p_expr -= sum(m.pl[bus_name] for bus_name in index_set if bus_p_loads[bus_name] is not None)
+    p_expr -= sum(bus_gs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2) for bus_name in index_set if bus_gs_fixed_shunts[bus_name] != 0.0)
+
+    if rhs_kwargs:
+        for idx,val in rhs_kwargs.items():
+            if idx == 'include_feasibility_slack_pos':
+                p_expr -= eval("m." + val)
+            if idx == 'include_feasibility_slack_neg':
+                p_expr += eval("m." + val)
+            if idx == 'include_losses':
+                p_expr -= sum(m.pfl[branch_name] for branch_name in val)
+
+    m.eq_p_balance = pe.Constraint(expr = p_expr == 0.0)
+
+
+def declare_eq_q_balance_fdf(model, index_set, buses, bus_q_loads, gens_by_bus, bus_bs_fixed_shunts, **rhs_kwargs):
     """
     Create the equality constraints for the reactive power balance
     at a bus using the variables for real power flows, respectively.
@@ -166,7 +191,8 @@ def declare_eq_q_balance_ed(model, index_set, bus_q_loads, gens_by_bus, bus_bs_f
 
     q_expr = sum(m.qg[gen_name] for bus_name in index_set for gen_name in gens_by_bus[bus_name])
     q_expr -= sum(m.ql[bus_name] for bus_name in index_set if bus_q_loads[bus_name] is not None)
-    q_expr += sum(bus_bs_fixed_shunts[bus_name] for bus_name in index_set if bus_bs_fixed_shunts[bus_name] != 0.0)
+    q_expr += sum(bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2) for bus_name in index_set if bus_bs_fixed_shunts[bus_name] != 0.0)
+
 
     if rhs_kwargs:
         for idx,val in rhs_kwargs.items():
@@ -439,16 +465,12 @@ def declare_eq_vm_fdf(model, index_set, buses, bus_q_loads, gens_by_bus, bus_bs_
             if vdf_tol and abs(coef) < vdf_tol:
                 coef = 0.
 
-            if bus_bs_fixed_shunts[bus_name] != 0.0:
-                expr -= coef * bus_bs_fixed_shunts[bus_name]
-
             if bus_q_loads[bus_name] != 0.0:
-                expr += coef * m.ql[bus_name]
+                expr -= coef * m.ql[bus_name]
 
             for gen_name in gens_by_bus[bus_name]:
-                expr -= coef * m.qg[gen_name]
+                expr += coef * m.qg[gen_name]
 
-        expr += bus['vdf_c']
-
+        expr += bus["vm"]#bus['vdf_c']
         m.eq_vm_fdf[_bus_name] = \
             m.vm[_bus_name] == expr

@@ -11,9 +11,8 @@
 This module contains several helper functions that are useful when
 modifying the data dictionary
 """
-import egret.model_library.transmission.tx_opt as tx_opt
+from tx_opt import calculate_ptdf, calculate_ptdf_ldf, calculate_qtdf_ldf_vdf
 from egret.model_library.defn import BasePointType, SensitivityCalculationMethod
-import numpy as np
 
 
 def create_dicts_of_fdf(md, base_point=BasePointType.SOLUTION, calculation_method=SensitivityCalculationMethod.INVERT):
@@ -23,7 +22,7 @@ def create_dicts_of_fdf(md, base_point=BasePointType.SOLUTION, calculation_metho
 
 def create_dicts_of_ptdf(md, base_point=BasePointType.FLATSTART, calculation_method=SensitivityCalculationMethod.INVERT):
 
-    ptdf = tx_opt.calculate_ptdf(md,base_point,calculation_method)
+    ptdf = calculate_ptdf(md,base_point,calculation_method)
 
     branch_attrs = md.attributes(element_type='branch')
     bus_attrs = md.attributes(element_type='bus')
@@ -39,7 +38,7 @@ def create_dicts_of_ptdf(md, base_point=BasePointType.FLATSTART, calculation_met
 
 def create_dicts_of_ptdf_losses(md, base_point=BasePointType.SOLUTION, calculation_method=SensitivityCalculationMethod.INVERT):
 
-    ptdf_r, ldf, ptdf_c, ldf_c = tx_opt.calculate_ptdf_ldf(md,base_point,calculation_method)
+    ptdf_r, ldf, ptdf_c, ldf_c = calculate_ptdf_ldf(md,base_point,calculation_method)
 
     branch_attrs = md.attributes(element_type='branch')
     bus_attrs = md.attributes(element_type='bus')
@@ -61,7 +60,7 @@ def create_dicts_of_ptdf_losses(md, base_point=BasePointType.SOLUTION, calculati
 
 def create_dicts_of_qtdf_losses(md,base_point=BasePointType.SOLUTION, calculation_method=SensitivityCalculationMethod.INVERT):
 
-    qtdf_r, qldf, vdf, qtdf_c, qldf_c, vdf_c = tx_opt.calculate_qtdf_ldf_vdf(md,base_point,calculation_method)
+    qtdf_r, qldf, vdf, qtdf_c, qldf_c, vdf_c = calculate_qtdf_ldf_vdf(md,base_point,calculation_method)
 
     branch_attrs = md.attributes(element_type='branch')
     bus_attrs = md.attributes(element_type='bus')
