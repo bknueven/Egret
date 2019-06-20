@@ -11,7 +11,7 @@
 This module contains several helper functions that are useful when
 modifying the data dictionary
 """
-from tx_opt import calculate_ptdf, calculate_ptdf_ldf, calculate_qtdf_ldf_vdf
+from egret.model_library.transmission.tx_opt import calculate_ptdf, calculate_ptdf_ldf, calculate_qtdf_ldf_vdf
 from egret.model_library.defn import BasePointType, SensitivityCalculationMethod
 
 

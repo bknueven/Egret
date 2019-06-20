@@ -362,7 +362,7 @@ def solve_dcopf_losses(model_data,
 
     m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
 
-    m, results = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
+    m, results, flag = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
                               symbolic_solver_labels=symbolic_solver_labels,options=options)
 
     # save results data to ModelData object
@@ -407,7 +407,7 @@ if __name__ == '__main__':
     from egret.parsers.matpower_parser import create_ModelData
 
     path = os.path.dirname(__file__)
-    case = 'pglib_opf_case3_lmbd'
+    case = 'pglib_opf_case24_ieee_rts'
     filename = case + '.m'
     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
     md = create_ModelData(matpower_file)
@@ -417,5 +417,5 @@ if __name__ == '__main__':
     model_data, model, results = solve_acopf(md, "ipopt", return_model=True, return_results=True)
     kwargs = {'include_feasibility_slack': 'False'}
     model_data, model, results = solve_dcopf_losses(model_data, "gurobi", dcopf_losses_model_generator=create_ptdf_losses_dcopf_model, return_model=True, return_results=True, **kwargs)
-    model.pprint()
+    #model.pprint()
 

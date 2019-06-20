@@ -17,7 +17,7 @@ import numpy as np
 from egret.model_library.defn import SensitivityCalculationMethod
 import egret.model_library.transmission.tx_utils as tx_utils
 from egret.models.acpf import create_psv_acpf_model
-from egret.models.dcopf import solve_dcopf, create_btheta_dcopf_model
+#from egret.models.dcopf import solve_dcopf, create_btheta_dcopf_model
 from egret.models.acopf import _load_solution_to_model_data, create_psv_acopf_model, solve_acopf
 import egret.model_library.decl as decl
 from egret.common.solver_interface import _solve_model
@@ -159,10 +159,10 @@ def _calculate_L11(branches,buses,index_set_branch,index_set_bus,base_point=Base
             tm = buses[to_bus]['va']
 
         idx_col = [key for key, value in _mapping_bus.items() if value == from_bus][0]
-        L11[idx_row][idx_col] = 2 * g * vn * vm * sin(tn - tm - shift)
+        L11[idx_row][idx_col] = -2 * g * vn * vm * sin(tn - tm - shift)
 
         idx_col = [key for key, value in _mapping_bus.items() if value == to_bus][0]
-        L11[idx_row][idx_col] = -2 * g * vn * vm * sin(tn - tm - shift)
+        L11[idx_row][idx_col] = 2 * g * vn * vm * sin(tn - tm - shift)
 
     return L11
 
@@ -416,7 +416,7 @@ def calculate_ptdf(md,base_point=BasePointType.FLATSTART,calculation_method=Sens
             pass
         SENSI = SENSI[:-1,:-1]
 
-        PTDF = np.around(np.matmul(J,SENSI))
+        PTDF = np.around(np.matmul(J,SENSI),8)
     elif calculation_method == SensitivityCalculationMethod.DUAL:
         PTDF = solve_ptdf(md)
 
@@ -518,12 +518,12 @@ def calculate_qtdf_ldf_vdf(md,base_point=BasePointType.SOLUTION,calculation_meth
             BS[idx][idx] = -bus_bs_fixed_shunts[bus_name] * buses[bus_name]['vm']
 
     if calculation_method == SensitivityCalculationMethod.INVERT:
-        J = _calculate_J22(branches,buses,index_set_branch,index_set_bus,base_point)
-        L = _calculate_L22(branches,buses,index_set_branch,index_set_bus,base_point)
+        J = _calculate_J22(branches,buses,index_set_branch,index_set_bus,base_point) # Derive reactive power flow sensitivity to voltage
+        L = _calculate_L22(branches,buses,index_set_branch,index_set_bus,base_point) # Derive reactive power loss sensitivity to voltage
 
         M1 = np.matmul(A.transpose(),J)
         M2 = np.matmul(AA.transpose(),L)
-        M = M1 + 0.5 * M2
+        M = M1 + 0.5 * M2 #+ 2 * BS         # Calculate A’*H + 0.5*absA’*L + 2Bs in paper
 
         J0 = np.zeros((_len_bus+1,_len_bus+1))
         J0[:-1,:-1] = M
@@ -531,29 +531,19 @@ def calculate_qtdf_ldf_vdf(md,base_point=BasePointType.SOLUTION,calculation_meth
         J0[_ref_bus_idx][-1] = 1
 
         try:
-            SENSI = np.linalg.inv(J0)
+            # SENSI = np.linalg.inv(J0)
+            SENSI = np.linalg.inv(M)
         except np.linalg.LinAlgError:
             print("Matrix not invertible. Calculating pseudo-inverse instead.")
-            SENSI = np.linalg.pinv(J0,rcond=1e-7)
+            # SENSI = np.linalg.inv(J0,rcond=1e-7)
+            SENSI = np.linalg.inv(M,rcond=1e-7)
             pass
-        SENSI = SENSI[:-1,:-1]
+        # SENSI = SENSI[:-1,:-1]
 
-        QTDF = np.around(np.matmul(J, SENSI),8)
-        LDF = np.around(np.matmul(L,SENSI),8)
+        QTDF = np.around(np.matmul(J, SENSI),8) # This is H*(A’*H + 0.5*absA’*L + 2Bs)^-1
+        LDF = np.around(np.matmul(L,SENSI),8) # This is L*(A’*H + 0.5*absA’*L + 2Bs)^-1
 
-        MV = M + 2 * BS
-        J0 = np.zeros((_len_bus+1,_len_bus+1))
-        J0[:-1,:-1] = MV
-        J0[-1][_ref_bus_idx] = 1
-        J0[_ref_bus_idx][-1] = 1
-
-        try:
-            SENSI = np.linalg.inv(J0)
-        except np.linalg.LinAlgError:
-            print("Matrix not invertible. Calculating pseudo-inverse instead.")
-            SENSI = np.linalg.pinv(J0,rcond=1e-7)
-            pass
-        VDF = np.around(SENSI[:-1,:-1],8)
+        VDF = np.around(SENSI,8) # This is X = (A’*H + 0.5*absA’*L + 2Bs)^-1
         #VDF = np.around(np.linalg.inv(MV),8)
 
     elif calculation_method == SensitivityCalculationMethod.DUAL:
@@ -568,7 +558,7 @@ def calculate_qtdf_ldf_vdf(md,base_point=BasePointType.SOLUTION,calculation_meth
     QTDF_constant = -np.matmul(QTDF,M) + Jc
     VM = np.asarray([value for (key,value) in bus_attrs['vm'].items()])
     BV = np.matmul(BS, VM)
-    M = M - BV
+    M = M #- BV
     VDF_constant = -np.matmul(VDF,M)
 
     gens = dict(md.elements(element_type='generator'))
@@ -627,8 +617,8 @@ def solve_ptdf(model_data):
     Calculates the sensitivity of the voltage angle to real power injections
     """
     kwargs = {'return_model':'True', 'return_results':'True', 'include_feasibility_slack':'False'}
-    md, m, results = solve_dcopf(model_data, "ipopt", dcopf_model_generator=create_btheta_dcopf_model, **kwargs)
-    #md, m, results = solve_acopf(model_data, "ipopt", acopf_model_generator=create_psv_acopf_model, **kwargs)
+    #md, m, results = solve_dcopf(model_data, "ipopt", dcopf_model_generator=create_btheta_dcopf_model, **kwargs)
+    md, m, results = solve_acopf(model_data, "ipopt", acopf_model_generator=create_psv_acopf_model, **kwargs)
 
     m, md = create_psv_acpf_model(md)
     _solve_fixed_acpf(m, md)
@@ -670,8 +660,8 @@ def solve_qtdf(model_data):
     Calculates the sensitivity of the voltage magnitude to reactive power injections
     """
     kwargs = {'return_model':'True', 'return_results':'True', 'include_feasibility_slack':'False'}
-    md, m, results = solve_dcopf(model_data, "ipopt", dcopf_model_generator=create_btheta_dcopf_model, **kwargs)
-    #md, m, results = solve_acopf(model_data, "ipopt", acopf_model_generator=create_psv_acopf_model, **kwargs)
+    #md, m, results = solve_dcopf(model_data, "ipopt", dcopf_model_generator=create_btheta_dcopf_model, **kwargs)
+    md, m, results = solve_acopf(model_data, "ipopt", acopf_model_generator=create_psv_acopf_model, **kwargs)
 
     m, md = create_psv_acpf_model(md)
     _solve_fixed_acpf(m, md)
@@ -685,7 +675,8 @@ def solve_qtdf(model_data):
     for k, k_dict in branches.items():
         k_dict['qfl'] = k_dict['qf'] + k_dict['qt']
 
-    m, md = _dual_qtdf_model(md)
+    m, md = _dual_qldf_model(md)
+    # m, md = _dual_qtdf_model(md)
 
     index_set_bus = bus_attrs['names']
     _len_bus = len(index_set_bus)
@@ -700,7 +691,7 @@ def solve_qtdf(model_data):
     for _k, branch_name in _mapping_branch.items():
         if hasattr(m,"objective"):
             m.del_component(m.objective)
-        m.objective = pe.Objective(expr=m.qf[branch_name])
+        m.objective = pe.Objective(expr=-m.qf[branch_name])
         m, results, flag = _solve_model(m, "gurobi")
         for _b, bus_name in _mapping_bus.items():
             qtdf[_k,_b] = m.dual.get(m.eq_q_balance[bus_name])
@@ -1135,9 +1126,9 @@ def _dual_qtdf_model(md):
         if bus_p_loads[bus_name] != 0.0: # only applies to fixed loads, otherwise may cause an error
             q_expr -= m.ql[bus_name]
 
-        if bus_name == ref_bus:
-            q_expr -= m.q_slack_pos[bus_name]
-            q_expr += m.q_slack_neg[bus_name]
+        # if bus_name == ref_bus:
+        #     q_expr -= m.q_slack_pos[bus_name]
+        #     q_expr += m.q_slack_neg[bus_name]
 
         for gen_name in gens_by_bus[bus_name]:
             q_expr += m.qg[gen_name]
@@ -1232,9 +1223,9 @@ def _dual_qldf_model(md):
         if bus_p_loads[bus_name] != 0.0: # only applies to fixed loads, otherwise may cause an error
             q_expr -= m.ql[bus_name]
 
-        if bus_name == ref_bus:
-            q_expr -= m.q_slack_pos[bus_name]
-            q_expr += m.q_slack_neg[bus_name]
+        # if bus_name == ref_bus:
+        #     q_expr -= m.q_slack_pos[bus_name]
+        #     q_expr += m.q_slack_neg[bus_name]
 
         for gen_name in gens_by_bus[bus_name]:
             q_expr += m.qg[gen_name]
@@ -1345,9 +1336,9 @@ def _dual_vdf_model(md):
         if bus_p_loads[bus_name] != 0.0: # only applies to fixed loads, otherwise may cause an error
             q_expr -= m.ql[bus_name]
 
-        if bus_name == ref_bus:
-            q_expr -= m.q_slack_pos[bus_name]
-            q_expr += m.q_slack_neg[bus_name]
+        # if bus_name == ref_bus:
+        #     q_expr -= m.q_slack_pos[bus_name]
+        #     q_expr += m.q_slack_neg[bus_name]
 
         for gen_name in gens_by_bus[bus_name]:
             q_expr += m.qg[gen_name]
@@ -1461,8 +1452,8 @@ if __name__ == '__main__':
     md = create_ModelData(matpower_file)
     from egret.models.acopf import solve_acopf
     #md = solve_acopf(md, "ipopt")
-    solve_ptdf(md)
+    #solve_ptdf(md)
     #solve_ldf(md)
     #solve_qtdf(md)
     #solve_qldf(md)
-    #solve_vdf(md)
+    solve_vdf(md)

@@ -706,6 +706,7 @@ def _load_solution_to_model_data(m, md):
             k_dict['pt'] = value(m.pt[k])
             k_dict['qf'] = value(m.qf[k])
             k_dict['qt'] = value(m.qt[k])
+
         if hasattr(m,'irf'):
             b = k_dict['from_bus']
             k_dict['pf'] = value(tx_calc.calculate_p(value(m.ifr[k]), value(m.ifj[k]), value(m.vr[b]), value(m.vj[b])))
@@ -770,7 +771,6 @@ def solve_acopf(model_data,
 
     _load_solution_to_model_data(m, md)
     #m.pprint()
-    m.vm.pprint()
 
     if return_model and return_results:
         return md, m, results

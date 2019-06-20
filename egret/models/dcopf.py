@@ -373,7 +373,7 @@ def solve_dcopf(model_data,
 #     from egret.parsers.matpower_parser import create_ModelData
 #
 #     path = os.path.dirname(__file__)
-#     filename = 'pglib_opf_case3_lmbd.m'
+#     filename = 'pglib_opf_case24_ieee_rts.m'
 #     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
 #     md = create_ModelData(matpower_file)
 #     kwargs = {'include_feasibility_slack':'True'}

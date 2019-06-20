@@ -386,13 +386,13 @@ def declare_eq_branch_power_ptdf_approx(model, index_set, branches, bus_p_loads,
                 coef = 0.
 
             if bus_gs_fixed_shunts[bus_name] != 0.0:
-                expr += coef * bus_gs_fixed_shunts[bus_name]
+                expr -= coef * bus_gs_fixed_shunts[bus_name]
 
             if bus_p_loads[bus_name] != 0.0:
-                expr += coef * m.pl[bus_name]
+                expr -= coef * m.pl[bus_name]
 
             for gen_name in gens_by_bus[bus_name]:
-                expr -= coef * m.pg[gen_name]
+                expr += coef * m.pg[gen_name]
 
         if include_constant_term:
             expr += branch['ptdf_c']
@@ -422,13 +422,13 @@ def declare_eq_branch_loss_ptdf_approx(model, index_set, branches, bus_p_loads, 
                 coef = 0.
 
             if bus_gs_fixed_shunts[bus_name] != 0.0:
-                expr += coef * bus_gs_fixed_shunts[bus_name]
+                expr -= coef * bus_gs_fixed_shunts[bus_name]
 
             if bus_p_loads[bus_name] != 0.0:
-                expr += coef * m.pl[bus_name]
+                expr -= coef * m.pl[bus_name]
 
             for gen_name in gens_by_bus[bus_name]:
-                expr -= coef * m.pg[gen_name]
+                expr += coef * m.pg[gen_name]
 
         if include_constant_term:
             expr += branch['ldf_c']
@@ -564,13 +564,13 @@ def declare_eq_branch_power_ptdf(model, index_set, branches, buses, bus_p_loads,
                 coef = 0.
 
             if bus_gs_fixed_shunts[bus_name] != 0.0:
-                expr += coef * bus_gs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
+                expr -= coef * bus_gs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
 
             if bus_p_loads[bus_name] != 0.0:
-                expr += coef * m.pl[bus_name]
+                expr -= coef * m.pl[bus_name]
 
             for gen_name in gens_by_bus[bus_name]:
-                expr -= coef * m.pg[gen_name]
+                expr += coef * m.pg[gen_name]
 
         if include_constant_term:
             expr += branch['ptdf_c']
@@ -600,13 +600,13 @@ def declare_eq_branch_loss_ptdf(model, index_set, branches, buses, bus_p_loads, 
                 coef = 0.
 
             if bus_gs_fixed_shunts[bus_name] != 0.0:
-                expr += coef * bus_gs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
+                expr -= coef * bus_gs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
 
             if bus_p_loads[bus_name] != 0.0:
-                expr += coef * m.pl[bus_name]
+                expr -= coef * m.pl[bus_name]
 
             for gen_name in gens_by_bus[bus_name]:
-                expr -= coef * m.pg[gen_name]
+                expr += coef * m.pg[gen_name]
 
         if include_constant_term:
             expr += branch['ldf_c']
@@ -635,13 +635,13 @@ def declare_eq_branch_power_qtdf(model, index_set, branches, buses, bus_q_loads,
                 coef = 0.
 
             if bus_bs_fixed_shunts[bus_name] != 0.0:
-                expr -= coef * bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
+                expr += coef * bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
 
             if bus_q_loads[bus_name] != 0.0:
-                expr += coef * m.ql[bus_name]
+                expr -= coef * m.ql[bus_name]
 
             for gen_name in gens_by_bus[bus_name]:
-                expr -= coef * m.qg[gen_name]
+                expr += coef * m.qg[gen_name]
 
         expr += branch['qtdf_c']
 
@@ -669,13 +669,13 @@ def declare_eq_branch_loss_qtdf(model, index_set, branches, buses, bus_q_loads, 
                 coef = 0.
 
             if bus_bs_fixed_shunts[bus_name] != 0.0:
-                expr -= coef * bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
+                expr += coef * bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
 
             if bus_q_loads[bus_name] != 0.0:
-                expr += coef * m.ql[bus_name]
+                expr -= coef * m.ql[bus_name]
 
             for gen_name in gens_by_bus[bus_name]:
-                expr -= coef * m.qg[gen_name]
+                expr += coef * m.qg[gen_name]
 
         expr += branch['qldf_c']
 
@@ -712,8 +712,8 @@ def declare_fdf_thermal_limit(model, index_set, thermal_limits, cuts=10):
         _pf = x * thermal_limits[branch_name]
         _qf = y * thermal_limits[branch_name]
 
-        # m.ineq_branch_thermal_limit[branch_name,p] = _pf*m.pf[branch_name] + _qf*m.qf[branch_name]\
-        #                                              <= thermal_limits[branch_name]**2
-
-        m.ineq_branch_thermal_limit[branch_name,p] = _pf * (m.pf[branch_name] + 0.5*m.pfl[branch_name]) + _qf * (m.qf[branch_name] + 0.5*m.qfl[branch_name]) \
+        m.ineq_branch_thermal_limit[branch_name,p] = _pf*m.pf[branch_name] + _qf*m.qf[branch_name]\
                                                      <= thermal_limits[branch_name]**2
+
+        # m.ineq_branch_thermal_limit[branch_name,p] = _pf * (m.pf[branch_name] + 0.5*m.pfl[branch_name]) + _qf * (m.qf[branch_name] + 0.5*m.qfl[branch_name]) \
+        #                                              <= thermal_limits[branch_name]**2

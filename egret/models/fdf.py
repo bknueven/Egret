@@ -89,9 +89,9 @@ def create_fdf_model(model_data, include_feasibility_slack=False, calculation_me
     bus_bs_fixed_shunts, bus_gs_fixed_shunts = tx_utils.dict_of_bus_fixed_shunts(buses, shunts)
 
     ### declare the polar voltages
-    libbus.declare_var_vm(model, bus_attrs['names'], initialize=bus_attrs['vm'])#,
-#                          bounds=zip_items(bus_attrs['v_min'], bus_attrs['v_max'])
-#                          )
+    libbus.declare_var_vm(model, bus_attrs['names'], initialize=bus_attrs['vm'],
+                          bounds=zip_items(bus_attrs['v_min'], bus_attrs['v_max'])
+                          )
 
     ### include the feasibility slack for the bus balances
     p_rhs_kwargs = {}
@@ -157,20 +157,20 @@ def create_fdf_model(model_data, include_feasibility_slack=False, calculation_me
 
     libbranch.declare_var_pf(model=model,
                              index_set=branch_attrs['names'],
-                             initialize=pf_init,
-                             bounds=pf_bounds
-                             )
+                             initialize=pf_init)#,
+#                             bounds=pf_bounds
+#                             )
     libbranch.declare_var_pfl(model=model,
                              index_set=branch_attrs['names'],
-                             initialize=pfl_init,
-                             bounds=pfl_bounds
-                             )
+                             initialize=pfl_init)#,
+#                             bounds=pfl_bounds
+#                             )
     libbranch.declare_var_qf(model=model,
                              index_set=branch_attrs['names'],
-                             initialize=qf_init,
-                             bounds=qf_bounds
-                             )
-    decl.declare_var('qfl', model=model, index_set=branch_attrs['names'], initialize=qfl_init, bounds=qfl_bounds)
+                             initialize=qf_init)#,
+#                             bounds=qf_bounds
+#                             )
+    decl.declare_var('qfl', model=model, index_set=branch_attrs['names'], initialize=qfl_init)#, bounds=qfl_bounds)
 
     ### declare the branch real power flow approximation constraints
     libbranch.declare_eq_branch_power_ptdf(model=model,
@@ -206,6 +206,7 @@ def create_fdf_model(model_data, include_feasibility_slack=False, calculation_me
                                                   )
 
     ### declare the branch reactive power loss approximation constraints
+    # TODO: FIX BUG IN HERE
     libbranch.declare_eq_branch_loss_qtdf(model=model,
                                                   index_set=branch_attrs['names'],
                                                   branches=branches,
@@ -244,13 +245,13 @@ def create_fdf_model(model_data, include_feasibility_slack=False, calculation_me
                                         )
 
     ### declare the voltage min and max inequalities
-    libbus.declare_eq_vm_fdf(model=model,
-                             index_set=bus_attrs['names'],
-                             buses=buses,
-                             bus_q_loads=bus_q_loads,
-                             gens_by_bus=gens_by_bus,
-                             bus_bs_fixed_shunts=bus_bs_fixed_shunts
-                             )
+    # libbus.declare_eq_vm_fdf(model=model,
+    #                          index_set=bus_attrs['names'],
+    #                          buses=buses,
+    #                          bus_q_loads=bus_q_loads,
+    #                          gens_by_bus=gens_by_bus,
+    #                          bus_bs_fixed_shunts=bus_bs_fixed_shunts
+    #                          )
 
     libgen.declare_eq_q_fdf_deviation(model=model,
                                       index_set=gen_attrs['names'],
@@ -375,8 +376,7 @@ def solve_fdf(model_data,
 
     if flag:
         _load_solution_to_model_data(m, md, results)
-        # m.pprint()
-        m.vm.pprint()
+        m.pprint()
 
     if return_model and return_results:
         return md, m, results
@@ -391,7 +391,7 @@ if __name__ == '__main__':
     from egret.parsers.matpower_parser import create_ModelData
 
     path = os.path.dirname(__file__)
-    filename = 'pglib_opf_case3_lmbd.m'
+    filename = 'pglib_opf_case57_ieee.m'
     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
     md = create_ModelData(matpower_file)
     kwargs = {'include_feasibility_slack':False}
@@ -399,3 +399,4 @@ if __name__ == '__main__':
     md = solve_acopf(md, "ipopt",**kwargs)
     md = solve_fdf(md, "gurobi",**kwargs)
 
+# not solving pglib_opf_case57_ieee
