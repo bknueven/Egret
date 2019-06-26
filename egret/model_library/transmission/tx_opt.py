@@ -651,7 +651,7 @@ def solve_ptdf(model_data):
     print(ptdf)
     ptdf_check = calculate_ptdf(md, base_point=BasePointType.SOLUTION, calculation_method=SensitivityCalculationMethod.INVERT)
     print(ptdf_check)
-
+    print(sum(sum(abs(ptdf-ptdf_check))))
     return ptdf
 
 
@@ -1392,6 +1392,7 @@ def _dual_vdf_model(md):
 def _solve_fixed_acpf(m, md):
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))
+    gens_by_bus = tx_utils.gens_by_bus(buses, gens)
 
     ref_bus = md.data['system']['reference_bus']
     slack_init = {ref_bus: 0}
@@ -1408,7 +1409,8 @@ def _solve_fixed_acpf(m, md):
     for gen_name in gens:
         m.pg[gen_name].fix(gens[gen_name]['pg'])
     for bus_name in buses:
-        m.vm[bus_name].fix(1.0)
+        if gens_by_bus[bus_name]:
+            m.vm[bus_name].fix(1.0)
 
     m.dual = pe.Suffix(direction=pe.Suffix.IMPORT_EXPORT)
     m, results, flag = _solve_model(m,"ipopt")
@@ -1447,13 +1449,14 @@ if __name__ == '__main__':
     from egret.parsers.matpower_parser import create_ModelData
 
     path = os.path.dirname(__file__)
-    filename = 'pglib_opf_case3_lmbd.m'
+    # filename = 'pglib_opf_case14_ieee.m'
+    filename = 'pglib_opf_case5_pjm.m'
     matpower_file = os.path.join(path, '../../../download/pglib-opf/', filename)
     md = create_ModelData(matpower_file)
     from egret.models.acopf import solve_acopf
     #md = solve_acopf(md, "ipopt")
-    #solve_ptdf(md)
+    solve_ptdf(md)
     #solve_ldf(md)
     #solve_qtdf(md)
     #solve_qldf(md)
-    solve_vdf(md)
+    #solve_vdf(md)

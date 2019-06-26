@@ -245,13 +245,13 @@ def create_fdf_model(model_data, include_feasibility_slack=False, calculation_me
                                         )
 
     ### declare the voltage min and max inequalities
-    # libbus.declare_eq_vm_fdf(model=model,
-    #                          index_set=bus_attrs['names'],
-    #                          buses=buses,
-    #                          bus_q_loads=bus_q_loads,
-    #                          gens_by_bus=gens_by_bus,
-    #                          bus_bs_fixed_shunts=bus_bs_fixed_shunts
-    #                          )
+    libbus.declare_eq_vm_fdf(model=model,
+                             index_set=bus_attrs['names'],
+                             buses=buses,
+                             bus_q_loads=bus_q_loads,
+                             gens_by_bus=gens_by_bus,
+                             bus_bs_fixed_shunts=bus_bs_fixed_shunts
+                             )
 
     libgen.declare_eq_q_fdf_deviation(model=model,
                                       index_set=gen_attrs['names'],

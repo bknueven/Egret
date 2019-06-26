@@ -634,8 +634,8 @@ def declare_eq_branch_power_qtdf(model, index_set, branches, buses, bus_q_loads,
             if qtdf_tol and abs(coef) < qtdf_tol:
                 coef = 0.
 
-            if bus_bs_fixed_shunts[bus_name] != 0.0:
-                expr += coef * bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
+            # if bus_bs_fixed_shunts[bus_name] != 0.0:
+            #     expr += coef * bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
 
             if bus_q_loads[bus_name] != 0.0:
                 expr -= coef * m.ql[bus_name]
@@ -668,8 +668,8 @@ def declare_eq_branch_loss_qtdf(model, index_set, branches, buses, bus_q_loads, 
             if qtdf_tol and abs(coef) < qtdf_tol:
                 coef = 0.
 
-            if bus_bs_fixed_shunts[bus_name] != 0.0:
-                expr += coef * bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
+            # if bus_bs_fixed_shunts[bus_name] != 0.0:
+            #     expr += coef * bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
 
             if bus_q_loads[bus_name] != 0.0:
                 expr -= coef * m.ql[bus_name]
