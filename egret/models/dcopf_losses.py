@@ -407,7 +407,7 @@ if __name__ == '__main__':
     from egret.parsers.matpower_parser import create_ModelData
 
     path = os.path.dirname(__file__)
-    case = 'pglib_opf_case24_ieee_rts'
+    case = 'pglib_opf_case57_ieee'
     filename = case + '.m'
     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
     md = create_ModelData(matpower_file)

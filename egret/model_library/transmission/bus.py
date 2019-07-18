@@ -166,7 +166,8 @@ def declare_eq_p_balance_fdf(model, index_set, buses, bus_p_loads, gens_by_bus, 
 
     p_expr = sum(m.pg[gen_name] for bus_name in index_set for gen_name in gens_by_bus[bus_name])
     p_expr -= sum(m.pl[bus_name] for bus_name in index_set if bus_p_loads[bus_name] is not None)
-    p_expr -= sum(bus_gs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2) for bus_name in index_set if bus_gs_fixed_shunts[bus_name] != 0.0)
+    p_expr -= sum(bus_gs_fixed_shunts[bus_name]*buses[bus_name]["vm"]*m.vm[bus_name] for bus_name in index_set if bus_gs_fixed_shunts[bus_name] != 0.0)
+    # p_expr -= sum(bus_gs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2) for bus_name in index_set if bus_gs_fixed_shunts[bus_name] != 0.0)
 
     if rhs_kwargs:
         for idx,val in rhs_kwargs.items():
@@ -191,7 +192,8 @@ def declare_eq_q_balance_fdf(model, index_set, buses, bus_q_loads, gens_by_bus, 
 
     q_expr = sum(m.qg[gen_name] for bus_name in index_set for gen_name in gens_by_bus[bus_name])
     q_expr -= sum(m.ql[bus_name] for bus_name in index_set if bus_q_loads[bus_name] is not None)
-    q_expr += sum(bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2) for bus_name in index_set if bus_bs_fixed_shunts[bus_name] != 0.0)
+    q_expr += sum(bus_bs_fixed_shunts[bus_name]*buses[bus_name]["vm"]*m.vm[bus_name] for bus_name in index_set if bus_bs_fixed_shunts[bus_name] != 0.0)
+    # q_expr += sum(bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2) for bus_name in index_set if bus_bs_fixed_shunts[bus_name] != 0.0)
 
 
     if rhs_kwargs:
@@ -445,7 +447,7 @@ def declare_ineq_vm_bus_lbub(model, index_set, buses, coordinate_type=Coordinate
                 m.vr[bus_name]**2 + m.vj[bus_name]**2 <= buses[bus_name]['v_max']**2
 
 
-def declare_eq_vm_fdf(model, index_set, buses, bus_q_loads, gens_by_bus, bus_bs_fixed_shunts, vdf_tol = None):
+def declare_eq_vm_fdf(model, index_set, buses, bus_q_loads, gens_by_bus, bus_bs_fixed_shunts, vdf_tol = None, **rhs_kwargs):
     """
     Create the inequalities for the voltage magnitudes from the
     voltage variables
@@ -466,7 +468,15 @@ def declare_eq_vm_fdf(model, index_set, buses, bus_q_loads, gens_by_bus, bus_bs_
                 coef = 0.
 
             if bus_bs_fixed_shunts[bus_name] != 0.0:
-                expr += coef * bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
+                expr += coef * bus_bs_fixed_shunts[bus_name]*buses[bus_name]["vm"]*m.vm[bus_name]
+                # expr += coef * bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
+
+            if rhs_kwargs:
+                for idx, val in rhs_kwargs.items():
+                    if idx == 'include_feasibility_slack_pos':
+                        expr += eval("m." + val)[bus_name]
+                    if idx == 'include_feasibility_slack_neg':
+                        expr -= eval("m." + val)[bus_name]
 
             if bus_q_loads[bus_name] != 0.0:
                 expr -= coef * m.ql[bus_name]

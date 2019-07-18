@@ -11,7 +11,7 @@
 This module contains several helper functions that are useful when
 modifying the data dictionary
 """
-from egret.model_library.transmission.tx_opt import calculate_ptdf, calculate_ptdf_ldf, calculate_qtdf_ldf_vdf
+from egret.model_library.transmission.tx_opt import calculate_ptdf, calculate_ptdf_ldf, calculate_qtdf_ldf_vdf, calculate_qtdf_ldf_vdf_backup
 from egret.model_library.defn import BasePointType, SensitivityCalculationMethod
 
 
@@ -61,6 +61,7 @@ def create_dicts_of_ptdf_losses(md, base_point=BasePointType.SOLUTION, calculati
 def create_dicts_of_qtdf_losses(md,base_point=BasePointType.SOLUTION, calculation_method=SensitivityCalculationMethod.INVERT):
 
     qtdf_r, qldf, vdf, qtdf_c, qldf_c, vdf_c = calculate_qtdf_ldf_vdf(md,base_point,calculation_method)
+    #qtdf_r, qldf, vdf, qtdf_c, qldf_c, vdf_c = calculate_qtdf_ldf_vdf_backup(md,base_point,calculation_method)
 
     branch_attrs = md.attributes(element_type='branch')
     bus_attrs = md.attributes(element_type='bus')

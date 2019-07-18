@@ -53,7 +53,24 @@ def _include_system_feasibility_slack(model, gen_attrs, bus_p_loads, bus_q_loads
     return p_rhs_kwargs, q_rhs_kwargs, penalty_expr
 
 
-def create_fdf_model(model_data, include_feasibility_slack=False, calculation_method=SensitivityCalculationMethod.INVERT):
+def _include_v_feasibility_slack(model, bus_attrs, penalty=100):
+    import egret.model_library.decl as decl
+    slack_init = {k: 0 for k in bus_attrs['names']}
+    slack_bounds = {k: (0,inf) for k in bus_attrs['names']}
+    decl.declare_var('v_slack_pos', model=model, index_set=bus_attrs["names"],
+                     initialize=slack_init, bounds=slack_bounds
+                     )
+    decl.declare_var('v_slack_neg', model=model, index_set=bus_attrs["names"],
+                     initialize=slack_init, bounds=slack_bounds
+                     )
+    v_rhs_kwargs = {'include_feasibility_slack_pos': 'v_slack_pos', 'include_feasibility_slack_neg': 'v_slack_neg'}
+
+    penalty_expr = penalty * (sum(model.v_slack_pos[k] + model.v_slack_neg[k] for k in bus_attrs["names"]))
+
+    return v_rhs_kwargs, penalty_expr
+
+
+def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feasibility_slack=False, calculation_method=SensitivityCalculationMethod.INVERT):
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
@@ -98,6 +115,10 @@ def create_fdf_model(model_data, include_feasibility_slack=False, calculation_me
     q_rhs_kwargs = {}
     if include_feasibility_slack:
         p_rhs_kwargs, q_rhs_kwargs, penalty_expr = _include_system_feasibility_slack(model, gen_attrs, bus_p_loads, bus_q_loads)
+
+    v_rhs_kwargs = {}
+    if include_v_feasibility_slack:
+        v_rhs_kwargs, v_penalty_expr = _include_v_feasibility_slack(model, bus_attrs)
 
     ### declare the generator real and reactive power
     pg_init = {k: (gen_attrs['p_min'][k] + gen_attrs['p_max'][k]) / 2.0 for k in gen_attrs['pg']}
@@ -206,7 +227,6 @@ def create_fdf_model(model_data, include_feasibility_slack=False, calculation_me
                                                   )
 
     ### declare the branch reactive power loss approximation constraints
-    # TODO: FIX BUG IN HERE
     libbranch.declare_eq_branch_loss_qtdf(model=model,
                                                   index_set=branch_attrs['names'],
                                                   branches=branches,
@@ -250,7 +270,8 @@ def create_fdf_model(model_data, include_feasibility_slack=False, calculation_me
                              buses=buses,
                              bus_q_loads=bus_q_loads,
                              gens_by_bus=gens_by_bus,
-                             bus_bs_fixed_shunts=bus_bs_fixed_shunts
+                             bus_bs_fixed_shunts=bus_bs_fixed_shunts,
+                             **v_rhs_kwargs
                              )
 
     libgen.declare_eq_q_fdf_deviation(model=model,
@@ -267,7 +288,8 @@ def create_fdf_model(model_data, include_feasibility_slack=False, calculation_me
     obj_expr += sum(model.qg_operating_cost[gen_name] for gen_name in model.qg_operating_cost)
     if include_feasibility_slack:
         obj_expr += penalty_expr
-
+    if include_v_feasibility_slack:
+        obj_expr += v_penalty_expr
     model.obj = pe.Objective(expr=obj_expr)
 
     return model, md
@@ -376,7 +398,9 @@ def solve_fdf(model_data,
 
     if flag:
         _load_solution_to_model_data(m, md, results)
-        m.pprint()
+        #m.vm.pprint()
+        #m.v_slack_pos.pprint()
+        #m.v_slack_neg.pprint()
 
     if return_model and return_results:
         return md, m, results
@@ -394,9 +418,13 @@ if __name__ == '__main__':
     filename = 'pglib_opf_case57_ieee.m'
     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
     md = create_ModelData(matpower_file)
-    kwargs = {'include_feasibility_slack':False}
+    kwargs = {'include_v_feasibility_slack':True}
     from egret.models.acopf import solve_acopf
-    md = solve_acopf(md, "ipopt",**kwargs)
+    md = solve_acopf(md, "ipopt")
     md = solve_fdf(md, "gurobi",**kwargs)
 
 # not solving pglib_opf_case57_ieee
+# pglib_opf_case162_ieee_dtc
+# pglib_opf_case179_goc
+# pglib_opf_case300_ieee
+# pglib_opf_case500_tamu
