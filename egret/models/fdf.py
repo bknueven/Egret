@@ -194,19 +194,19 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
     decl.declare_var('qfl', model=model, index_set=branch_attrs['names'], initialize=qfl_init)#, bounds=qfl_bounds)
 
     ### declare the branch real power flow approximation constraints
-    libbranch.declare_eq_branch_power_ptdf(model=model,
+    libbranch.declare_eq_branch_power_ptdf_approx(model=model,
                                                   index_set=branch_attrs['names'],
                                                   branches=branches,
                                                   buses=buses,
                                                   bus_p_loads=bus_p_loads,
                                                   gens_by_bus=gens_by_bus,
                                                   bus_gs_fixed_shunts=bus_gs_fixed_shunts,
-                                                  approximation_type=ApproximationType.PTDF_LOSSES,
+                                                  approximation_type=ApproximationType.FDF,
                                                   include_constant_term=True
                                                   )
 
     ### declare the branch reactive power flow approximation constraints
-    libbranch.declare_eq_branch_power_qtdf(model=model,
+    libbranch.declare_eq_branch_power_qtdf_approx(model=model,
                                                   index_set=branch_attrs['names'],
                                                   branches=branches,
                                                   buses=buses,
@@ -216,18 +216,19 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
                                                   )
 
     ### declare the branch real power loss approximation constraints
-    libbranch.declare_eq_branch_loss_ptdf(model=model,
+    libbranch.declare_eq_branch_loss_ptdf_approx(model=model,
                                                   index_set=branch_attrs['names'],
                                                   branches=branches,
                                                   buses=buses,
                                                   bus_p_loads=bus_p_loads,
                                                   gens_by_bus=gens_by_bus,
                                                   bus_gs_fixed_shunts=bus_gs_fixed_shunts,
-                                                  include_constant_term=True
+                                                  include_constant_term=True,
+                                                  approximation_type=ApproximationType.FDF
                                                   )
 
     ### declare the branch reactive power loss approximation constraints
-    libbranch.declare_eq_branch_loss_qtdf(model=model,
+    libbranch.declare_eq_branch_loss_qtdf_approx(model=model,
                                                   index_set=branch_attrs['names'],
                                                   branches=branches,
                                                   buses=buses,
@@ -415,7 +416,7 @@ if __name__ == '__main__':
     from egret.parsers.matpower_parser import create_ModelData
 
     path = os.path.dirname(__file__)
-    filename = 'pglib_opf_case57_ieee.m'
+    filename = 'pglib_opf_case500_tamu.m'
     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
     md = create_ModelData(matpower_file)
     kwargs = {'include_v_feasibility_slack':True}

@@ -132,9 +132,4 @@ def _solve_model(model,
         results = solver.solve(model, tee=solver_tee, \
                               symbolic_solver_labels=symbolic_solver_labels)
 
-    flag = True
-    if results.solver.termination_condition not in safe_termination_conditions:
-        flag = False
-        # raise Exception('Problem encountered during solve, termination_condition {}'.format(results.solver.termination_condition))
-
-    return model, results, flag
+    return model, results

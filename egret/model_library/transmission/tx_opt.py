@@ -62,7 +62,7 @@ def _calculate_J11(branches,buses,index_set_branch,index_set_bus,base_point=Base
             vm = 1.
             tn = 0.
             tm = 0.
-        elif base_point == BasePointType.SOLUTION: # TODO: check that we are loading the correct values (or results)
+        elif base_point == BasePointType.SOLUTION:
             vn = buses[from_bus]['vm']
             vm = buses[to_bus]['vm']
             tn = buses[from_bus]['va']
@@ -108,16 +108,16 @@ def _calculate_J22(branches,buses,index_set_branch,index_set_bus,base_point=Base
             vm = 1.
             tn = 0.
             tm = 0.
-        elif base_point == BasePointType.SOLUTION: # TODO: check that we are loading the correct values (or results)
+        elif base_point == BasePointType.SOLUTION:
             vn = buses[from_bus]['vm']
             vm = buses[to_bus]['vm']
             tn = buses[from_bus]['va']
             tm = buses[to_bus]['va']
         idx_col = [key for key, value in _mapping_bus.items() if value == from_bus][0]
-        J22[idx_row][idx_col] = -(b + bc/2)/tau**2 * vn - g/tau * vm * sin(tn - tm - shift)
+        J22[idx_row][idx_col] = -(b + bc/2)/tau**2 * vn - g/tau * vm * sin(tn - tm)
 
         idx_col = [key for key, value in _mapping_bus.items() if value == to_bus][0]
-        J22[idx_row][idx_col] = (b + bc/2) * vm - g/tau * vn * sin(tn - tm - shift)
+        J22[idx_row][idx_col] = (b + bc/2) * vm - g/tau * vn * sin(tn - tm)
 
     return J22
 
@@ -149,7 +149,7 @@ def _calculate_L11(branches,buses,index_set_branch,index_set_bus,base_point=Base
             vm = 1.
             tn = 0.
             tm = 0.
-        elif base_point == BasePointType.SOLUTION: # TODO: check that we are loading the correct values (or results)
+        elif base_point == BasePointType.SOLUTION:
             vn = buses[from_bus]['vm']
             vm = buses[to_bus]['vm']
             tn = buses[from_bus]['va']
@@ -194,7 +194,7 @@ def _calculate_L22(branches,buses,index_set_branch,index_set_bus,base_point=Base
             vm = 1.
             tn = 0.
             tm = 0.
-        elif base_point == BasePointType.SOLUTION: # TODO: check that we are loading the correct values (or results)
+        elif base_point == BasePointType.SOLUTION:
             vn = buses[from_bus]['vm']
             vm = buses[to_bus]['vm']
             tn = buses[from_bus]['va']
@@ -231,7 +231,7 @@ def calculate_phi_constant(branches,index_set_branch,index_set_bus,approximation
         shift = 0.0
         if branch['branch_type'] == 'transformer':
             tau = branch['transformer_tap_ratio']
-            shift = math.radians(branch['transformer_phase_shift'])
+            shift = radians(branch['transformer_phase_shift'])
 
         b = 0.
         if approximation_type == ApproximationType.PTDF:
@@ -247,6 +247,41 @@ def calculate_phi_constant(branches,index_set_branch,index_set_bus,approximation
         phi_to[idx_col][idx_row] = b
 
     return phi_from, phi_to
+
+
+def calculate_phi_q_constant(branches,index_set_branch,index_set_bus):
+    """
+    Compute the phase shifter constant impact on reactive power flows for fixed phase shift transformers
+    """
+    _len_bus = len(index_set_bus)
+    _mapping_bus = {i: index_set_bus[i] for i in list(range(0,_len_bus))}
+
+    _len_branch = len(index_set_branch)
+    _mapping_branch = {i: index_set_branch[i] for i in list(range(0,_len_branch))}
+
+    phi_q_from = np.zeros((_len_bus,_len_branch))
+    phi_q_to = np.zeros((_len_bus,_len_branch))
+
+    for idx_row, branch_name in _mapping_branch.items():
+        branch = branches[branch_name]
+        from_bus = branch['from_bus']
+        to_bus = branch['to_bus']
+
+        tau = 1.0
+        shift = 0.0
+        if branch['branch_type'] == 'transformer':
+            tau = branch['transformer_tap_ratio']
+            shift = radians(branch['transformer_phase_shift'])
+
+        g = calculate_conductance(branch)*(shift/tau)
+
+        idx_col = [key for key, value in _mapping_bus.items() if value == from_bus][0]
+        phi_q_from[idx_col][idx_row] = g
+
+        idx_col = [key for key, value in _mapping_bus.items() if value == to_bus][0]
+        phi_q_to[idx_col][idx_row] = g
+
+    return phi_q_from, phi_q_to
 
 
 def calculate_phi_loss_constant(branches,index_set_branch,index_set_bus,approximation_type=ApproximationType.PTDF_LOSSES):
@@ -271,7 +306,7 @@ def calculate_phi_loss_constant(branches,index_set_branch,index_set_bus,approxim
         shift = 0.0
         if branch['branch_type'] == 'transformer':
             tau = branch['transformer_tap_ratio']
-            shift = math.radians(branch['transformer_phase_shift'])
+            shift = radians(branch['transformer_phase_shift'])
 
         g = 0.
         if approximation_type == ApproximationType.PTDF:
@@ -287,6 +322,41 @@ def calculate_phi_loss_constant(branches,index_set_branch,index_set_bus,approxim
         phi_loss_to[idx_col][idx_row] = g
 
     return phi_loss_from, phi_loss_to
+
+
+def calculate_phi_loss_q_constant(branches,index_set_branch,index_set_bus):
+    """
+    Compute the phase shifter constant for fixed phase shift transformers
+    """
+    _len_bus = len(index_set_bus)
+    _mapping_bus = {i: index_set_bus[i] for i in list(range(0,_len_bus))}
+
+    _len_branch = len(index_set_branch)
+    _mapping_branch = {i: index_set_branch[i] for i in list(range(0,_len_branch))}
+
+    phi_loss_q_from = np.zeros((_len_bus,_len_branch))
+    phi_loss_q_to = np.zeros((_len_bus,_len_branch))
+
+    for idx_row, branch_name in _mapping_branch.items():
+        branch = branches[branch_name]
+        from_bus = branch['from_bus']
+        to_bus = branch['to_bus']
+
+        tau = 1.0
+        shift = 0.0
+        if branch['branch_type'] == 'transformer':
+            tau = branch['transformer_tap_ratio']
+            shift = radians(branch['transformer_phase_shift'])
+
+        b = calculate_susceptance(branch)*(1/tau)*shift**2
+
+        idx_col = [key for key, value in _mapping_bus.items() if value == from_bus][0]
+        phi_loss_q_from[idx_col][idx_row] = b
+
+        idx_col = [key for key, value in _mapping_bus.items() if value == to_bus][0]
+        phi_loss_q_to[idx_col][idx_row] = b
+
+    return phi_loss_q_from, phi_loss_q_to
 
 
 def _calculate_pf_constant(branches,buses,index_set_branch,base_point=BasePointType.FLATSTART):
@@ -319,7 +389,7 @@ def _calculate_pf_constant(branches,buses,index_set_branch,base_point=BasePointT
             vm = 1.
             tn = 0.
             tm = 0.
-        elif base_point == BasePointType.SOLUTION: # TODO: check that we are loading the correct values (or results)
+        elif base_point == BasePointType.SOLUTION:
             vn = buses[from_bus]['vm']
             vm = buses[to_bus]['vm']
             tn = buses[from_bus]['va']
@@ -362,7 +432,7 @@ def _calculate_qf_constant(branches,buses,index_set_branch,base_point=BasePointT
             vm = 1.
             tn = 0.
             tm = 0.
-        elif base_point == BasePointType.SOLUTION: # TODO: check that we are loading the correct values (or results)
+        elif base_point == BasePointType.SOLUTION:
             vn = buses[from_bus]['vm']
             vm = buses[to_bus]['vm']
             tn = buses[from_bus]['va']
@@ -403,7 +473,7 @@ def _calculate_pfl_constant(branches,buses,index_set_branch,base_point=BasePoint
             vm = 1.
             tn = 0.
             tm = 0.
-        elif base_point == BasePointType.SOLUTION: # TODO: check that we are loading the correct values (or results)
+        elif base_point == BasePointType.SOLUTION:
             vn = buses[from_bus]['vm']
             vm = buses[to_bus]['vm']
             tn = buses[from_bus]['va']
@@ -445,7 +515,7 @@ def _calculate_qfl_constant(branches,buses,index_set_branch,base_point=BasePoint
             vm = 1.
             tn = 0.
             tm = 0.
-        elif base_point == BasePointType.SOLUTION: # TODO: check that we are loading the correct values (or results)
+        elif base_point == BasePointType.SOLUTION:
             vn = buses[from_bus]['vm']
             vm = buses[to_bus]['vm']
             tn = buses[from_bus]['va']

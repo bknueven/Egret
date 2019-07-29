@@ -362,7 +362,7 @@ def declare_eq_branch_loss_btheta_approx(model, index_set, branches, relaxation_
 
 
 def declare_eq_branch_power_ptdf_approx(model, index_set, branches, buses, bus_p_loads, gens_by_bus,
-                                        bus_gs_fixed_shunts, ptdf_tol = 1e-10,
+                                        bus_gs_fixed_shunts, include_constant_term = False, ptdf_tol = 1e-10,
                                         approximation_type = ApproximationType.PTDF):
     """
     Create the equality constraints for power (from PTDF approximation)
@@ -388,7 +388,7 @@ def declare_eq_branch_power_ptdf_approx(model, index_set, branches, buses, bus_p
             if shift != 0.:
                 b = -(1 / branch['reactance'])
                 expr += b * (shift / tau)
-        elif approximation_type == ApproximationType.PTDF_LOSSES:
+        elif approximation_type == ApproximationType.PTDF_LOSSES or approximation_type == ApproximationType.FDF:
             ptdf = branch['ptdf_r']
             if shift != 0.:
                 b = tx_calc.calculate_susceptance(branch)
@@ -402,7 +402,11 @@ def declare_eq_branch_power_ptdf_approx(model, index_set, branches, buses, bus_p
             phi_to = bus['phi_to']
 
             if bus_gs_fixed_shunts[bus_name] != 0.0:
-                expr -= coef * bus_gs_fixed_shunts[bus_name]
+                if ApproximationType.FDF:
+                    expr -= coef * bus_gs_fixed_shunts[bus_name] * (
+                                2 * buses[bus_name]["vm"] * m.vm[bus_name] - (buses[bus_name]["vm"]) ** 2)
+                else:
+                    expr -= coef * bus_gs_fixed_shunts[bus_name]
 
             if bus_p_loads[bus_name] != 0.0:
                 expr -= coef * m.pl[bus_name]
@@ -410,20 +414,22 @@ def declare_eq_branch_power_ptdf_approx(model, index_set, branches, buses, bus_p
             for gen_name in gens_by_bus[bus_name]:
                 expr += coef * m.pg[gen_name]
 
-        if include_constant_term:
-            expr += branch['ptdf_c']
-
             for _, phi in phi_from.items():
                 expr += coef * phi
 
             for _, phi in phi_to.items():
                 expr -= coef * phi
 
+        if include_constant_term:
+            expr += branch['ptdf_c']
+
         m.eq_pf_branch[branch_name] = \
             m.pf[branch_name] == expr
 
 
-def declare_eq_branch_loss_ptdf_approx(model, index_set, branches, buses, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts, ldf_tol = 1e-10):
+def declare_eq_branch_loss_ptdf_approx(model, index_set, branches, buses, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts,
+                                       include_constant_term = True, ldf_tol = 1e-10,
+                                        approximation_type = ApproximationType.PTDF_LOSSES):
     """
     Create the equality constraints for losses (from PTDF approximation)
     in the branch
@@ -452,7 +458,11 @@ def declare_eq_branch_loss_ptdf_approx(model, index_set, branches, buses, bus_p_
             phi_loss_to = bus['phi_loss_to']
 
             if bus_gs_fixed_shunts[bus_name] != 0.0:
-                expr -= coef * bus_gs_fixed_shunts[bus_name]
+                if approximation_type == ApproximationType.PTDF_LOSSES:
+                    expr -= coef * bus_gs_fixed_shunts[bus_name]
+                elif approximation_type == ApproximationType.FDF:
+                    expr -= coef * bus_gs_fixed_shunts[bus_name] * (
+                            2 * buses[bus_name]["vm"] * m.vm[bus_name] - (buses[bus_name]["vm"]) ** 2)
 
             if bus_p_loads[bus_name] != 0.0:
                 expr -= coef * m.pl[bus_name]
@@ -466,10 +476,109 @@ def declare_eq_branch_loss_ptdf_approx(model, index_set, branches, buses, bus_p_
             for _, phi_loss in phi_loss_to.items():
                 expr -= coef * phi_loss
 
-        expr += branch['ldf_c']
+        if include_constant_term:
+            expr += branch['ldf_c']
 
         m.eq_pfl_branch[branch_name] = \
             m.pfl[branch_name] == expr
+
+
+def declare_eq_branch_power_qtdf_approx(model, index_set, branches, buses, bus_q_loads, gens_by_bus, bus_bs_fixed_shunts, qtdf_tol = 1e-10):
+    """
+    Create the equality constraints for reactive power (from QTDF approximation)
+    in the branch
+    """
+    m = model
+
+    con_set = decl.declare_set("_con_eq_branch_power_qtdf_approx_set", model, index_set)
+
+    m.eq_qf_branch = pe.Constraint(con_set)
+    for branch_name in con_set:
+        branch = branches[branch_name]
+        expr = 0
+
+        if branch['branch_type'] == 'transformer':
+            tau = branch['transformer_tap_ratio']
+            shift = math.radians(branch['transformer_phase_shift'])
+            g = tx_calc.calculate_conductance(branch)
+            expr += (g/tau) * shift
+
+        qtdf = branch['qtdf_r']
+        for bus_name, coef in qtdf.items():
+            if qtdf_tol and abs(coef) < qtdf_tol:
+                continue
+            bus = buses[bus_name]
+            phi_q_from = bus['phi_q_from']
+            phi_q_to = bus['phi_q_to']
+
+            if bus_bs_fixed_shunts[bus_name] != 0.0:
+                expr += coef * bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
+
+            if bus_q_loads[bus_name] != 0.0:
+                expr -= coef * m.ql[bus_name]
+
+            for gen_name in gens_by_bus[bus_name]:
+                expr += coef * m.qg[gen_name]
+
+            for _, phi_q in phi_q_from.items():
+                expr += coef * phi_q
+
+            for _, phi_q in phi_q_to.items():
+                expr -= coef * phi_q
+
+        expr += branch['qtdf_c']
+
+        m.eq_qf_branch[branch_name] = \
+            m.qf[branch_name] == expr
+
+
+def declare_eq_branch_loss_qtdf_approx(model, index_set, branches, buses, bus_q_loads, gens_by_bus, bus_bs_fixed_shunts, qldf_tol = 1e-10):
+    """
+    Create the equality constraints for losses (from QTDF approximation)
+    in the branch
+    """
+    m = model
+
+    con_set = decl.declare_set("_con_eq_branch_loss_qtdf_approx_set", model, index_set)
+
+    m.eq_qfl_branch = pe.Constraint(con_set)
+    for branch_name in con_set:
+        branch = branches[branch_name]
+        expr = 0
+
+        if branch['branch_type'] == 'transformer':
+            tau = branch['transformer_tap_ratio']
+            shift = math.radians(branch['transformer_phase_shift'])
+            b = tx_calc.calculate_susceptance(branch)
+            expr += (b/tau) * shift**2
+
+        qldf = branch['qldf']
+        for bus_name, coef in qldf.items():
+            if qldf_tol and abs(coef) < qldf_tol:
+                continue
+            bus = buses[bus_name]
+            phi_loss_q_from = bus['phi_loss_q_from']
+            phi_loss_q_to = bus['phi_loss_q_to']
+
+            if bus_bs_fixed_shunts[bus_name] != 0.0:
+                expr += coef * bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
+
+            if bus_q_loads[bus_name] != 0.0:
+                expr -= coef * m.ql[bus_name]
+
+            for gen_name in gens_by_bus[bus_name]:
+                expr += coef * m.qg[gen_name]
+
+            for _, phi_loss_q in phi_loss_q_from.items():
+                expr += coef * phi_loss_q
+
+            for _, phi_loss_q in phi_loss_q_to.items():
+                expr -= coef * phi_loss_q
+
+        expr += branch['qldf_c']
+
+        m.eq_qfl_branch[branch_name] = \
+            m.qfl[branch_name] == expr
 
 
 def declare_ineq_s_branch_thermal_limit(model, index_set,
@@ -572,152 +681,6 @@ def declare_ineq_angle_diff_branch_lbub(model, index_set,
             m.ineq_angle_diff_branch_ub[branch_name] = \
                 pe.atan(m.vj[from_bus] / m.vr[from_bus]) \
                 - pe.atan(m.vj[to_bus] / m.vr[to_bus]) <= branches[branch_name]['angle_diff_max']
-
-
-def declare_eq_branch_power_ptdf(model, index_set, branches, buses, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts,
-                                        include_constant_term = False, ptdf_tol = None,
-                                        approximation_type = ApproximationType.PTDF):
-    """
-    Create the equality constraints for power (from PTDF approximation)
-    in the branch
-    """
-    m = model
-
-    con_set = decl.declare_set("_con_eq_branch_power_ptdf_approx_set", model, index_set)
-
-    m.eq_pf_branch = pe.Constraint(con_set)
-    for branch_name in con_set:
-        branch = branches[branch_name]
-        expr = 0
-
-        if approximation_type == ApproximationType.PTDF:
-            ptdf = branch['ptdf']
-        elif approximation_type == ApproximationType.PTDF_LOSSES:
-            ptdf = branch['ptdf_r']
-        for bus_name, coef in ptdf.items():
-            if ptdf_tol and abs(coef) < ptdf_tol:
-                coef = 0.
-
-            if bus_gs_fixed_shunts[bus_name] != 0.0:
-                expr -= coef * bus_gs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
-
-            if bus_p_loads[bus_name] != 0.0:
-                expr -= coef * m.pl[bus_name]
-
-            for gen_name in gens_by_bus[bus_name]:
-                expr += coef * m.pg[gen_name]
-
-        if include_constant_term:
-            expr += branch['ptdf_c']
-
-        m.eq_pf_branch[branch_name] = \
-            m.pf[branch_name] == expr
-
-
-def declare_eq_branch_loss_ptdf(model, index_set, branches, buses, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts,
-                                       include_constant_term = True, ptdf_tol = None):
-    """
-    Create the equality constraints for losses (from PTDF approximation)
-    in the branch
-    """
-    m = model
-
-    con_set = decl.declare_set("_con_eq_branch_loss_ptdf_approx_set", model, index_set)
-
-    m.eq_pfl_branch = pe.Constraint(con_set)
-    for branch_name in con_set:
-        branch = branches[branch_name]
-        expr = 0
-
-        ldf = branch['ldf']
-        for bus_name, coef in ldf.items():
-            if ptdf_tol and abs(coef) < ptdf_tol:
-                coef = 0.
-
-            if bus_gs_fixed_shunts[bus_name] != 0.0:
-                expr -= coef * bus_gs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
-
-            if bus_p_loads[bus_name] != 0.0:
-                expr -= coef * m.pl[bus_name]
-
-            for gen_name in gens_by_bus[bus_name]:
-                expr += coef * m.pg[gen_name]
-
-        if include_constant_term:
-            expr += branch['ldf_c']
-
-        m.eq_pfl_branch[branch_name] = \
-            m.pfl[branch_name] == expr
-
-
-def declare_eq_branch_power_qtdf(model, index_set, branches, buses, bus_q_loads, gens_by_bus, bus_bs_fixed_shunts, qtdf_tol = None):
-    """
-    Create the equality constraints for reactive power (from QTDF approximation)
-    in the branch
-    """
-    m = model
-
-    con_set = decl.declare_set("_con_eq_branch_power_qtdf_approx_set", model, index_set)
-
-    m.eq_qf_branch = pe.Constraint(con_set)
-    for branch_name in con_set:
-        branch = branches[branch_name]
-        expr = 0
-
-        qtdf = branch['qtdf_r']
-        for bus_name, coef in qtdf.items():
-            if qtdf_tol and abs(coef) < qtdf_tol:
-                coef = 0.
-
-            if bus_bs_fixed_shunts[bus_name] != 0.0:
-                expr += coef * bus_bs_fixed_shunts[bus_name]*buses[bus_name]["vm"]*m.vm[bus_name]
-                # expr += coef * bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
-
-            if bus_q_loads[bus_name] != 0.0:
-                expr -= coef * m.ql[bus_name]
-
-            for gen_name in gens_by_bus[bus_name]:
-                expr += coef * m.qg[gen_name]
-
-        expr += branch['qtdf_c']
-
-        m.eq_qf_branch[branch_name] = \
-            m.qf[branch_name] == expr
-
-
-def declare_eq_branch_loss_qtdf(model, index_set, branches, buses, bus_q_loads, gens_by_bus, bus_bs_fixed_shunts, qtdf_tol = None):
-    """
-    Create the equality constraints for losses (from QTDF approximation)
-    in the branch
-    """
-    m = model
-
-    con_set = decl.declare_set("_con_eq_branch_loss_qtdf_approx_set", model, index_set)
-
-    m.eq_qfl_branch = pe.Constraint(con_set)
-    for branch_name in con_set:
-        branch = branches[branch_name]
-        expr = 0
-
-        qldf = branch['qldf']
-        for bus_name, coef in qldf.items():
-            if qtdf_tol and abs(coef) < qtdf_tol:
-                coef = 0.
-
-            if bus_bs_fixed_shunts[bus_name] != 0.0:
-                expr += coef * bus_bs_fixed_shunts[bus_name]*buses[bus_name]["vm"]*m.vm[bus_name]
-                # expr += coef * bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
-
-            if bus_q_loads[bus_name] != 0.0:
-                expr -= coef * m.ql[bus_name]
-
-            for gen_name in gens_by_bus[bus_name]:
-                expr += coef * m.qg[gen_name]
-
-        expr += branch['qldf_c']
-
-        m.eq_qfl_branch[branch_name] = \
-            m.qfl[branch_name] == expr
 
 
 def declare_fdf_thermal_limit(model, index_set, thermal_limits, cuts=10):

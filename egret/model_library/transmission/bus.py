@@ -13,7 +13,7 @@ typically used for buses (including loads and shunts)
 """
 import pyomo.environ as pe
 import egret.model_library.decl as decl
-from egret.model_library.defn import FlowType, CoordinateType, ApproximationType
+from egret.model_library.defn import CoordinateType, ApproximationType
 from math import tan,  radians
 
 def declare_var_vr(model, index_set, **kwargs):
@@ -173,8 +173,7 @@ def declare_eq_p_balance_fdf(model, index_set, buses, bus_p_loads, gens_by_bus, 
 
     p_expr = sum(m.pg[gen_name] for bus_name in index_set for gen_name in gens_by_bus[bus_name])
     p_expr -= sum(m.pl[bus_name] for bus_name in index_set if bus_p_loads[bus_name] is not None)
-    p_expr -= sum(bus_gs_fixed_shunts[bus_name]*buses[bus_name]["vm"]*m.vm[bus_name] for bus_name in index_set if bus_gs_fixed_shunts[bus_name] != 0.0)
-    # p_expr -= sum(bus_gs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2) for bus_name in index_set if bus_gs_fixed_shunts[bus_name] != 0.0)
+    p_expr -= sum(bus_gs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2) for bus_name in index_set if bus_gs_fixed_shunts[bus_name] != 0.0)
 
     if rhs_kwargs:
         for idx,val in rhs_kwargs.items():
@@ -199,8 +198,7 @@ def declare_eq_q_balance_fdf(model, index_set, buses, bus_q_loads, gens_by_bus, 
 
     q_expr = sum(m.qg[gen_name] for bus_name in index_set for gen_name in gens_by_bus[bus_name])
     q_expr -= sum(m.ql[bus_name] for bus_name in index_set if bus_q_loads[bus_name] is not None)
-    q_expr += sum(bus_bs_fixed_shunts[bus_name]*buses[bus_name]["vm"]*m.vm[bus_name] for bus_name in index_set if bus_bs_fixed_shunts[bus_name] != 0.0)
-    # q_expr += sum(bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2) for bus_name in index_set if bus_bs_fixed_shunts[bus_name] != 0.0)
+    q_expr += sum(bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2) for bus_name in index_set if bus_bs_fixed_shunts[bus_name] != 0.0)
 
 
     if rhs_kwargs:
@@ -475,8 +473,7 @@ def declare_eq_vm_fdf(model, index_set, buses, bus_q_loads, gens_by_bus, bus_bs_
                 coef = 0.
 
             if bus_bs_fixed_shunts[bus_name] != 0.0:
-                expr += coef * bus_bs_fixed_shunts[bus_name]*buses[bus_name]["vm"]*m.vm[bus_name]
-                # expr += coef * bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
+                expr += coef * bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
 
             if rhs_kwargs:
                 for idx, val in rhs_kwargs.items():

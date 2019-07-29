@@ -11,7 +11,9 @@
 This module contains several helper functions that are useful when
 modifying the data dictionary
 """
-from egret.model_library.transmission.tx_opt import calculate_ptdf, calculate_ptdf_ldf, calculate_qtdf_ldf_vdf, calculate_qtdf_ldf_vdf_backup, calculate_phi_constant, calculate_phi_loss_constant
+from egret.model_library.transmission.tx_opt import calculate_ptdf, calculate_ptdf_ldf, calculate_qtdf_ldf_vdf, \
+    calculate_phi_constant, calculate_phi_loss_constant, calculate_phi_q_constant, \
+    calculate_phi_loss_q_constant
 from egret.model_library.defn import BasePointType, SensitivityCalculationMethod, ApproximationType
 
 
@@ -101,10 +103,14 @@ def create_dicts_of_ptdf_losses(md, base_point=BasePointType.SOLUTION, calculati
 def create_dicts_of_qtdf_losses(md,base_point=BasePointType.SOLUTION, calculation_method=SensitivityCalculationMethod.INVERT):
 
     qtdf_r, qldf, vdf, qtdf_c, qldf_c, vdf_c = calculate_qtdf_ldf_vdf(md,base_point,calculation_method)
-    #qtdf_r, qldf, vdf, qtdf_c, qldf_c, vdf_c = calculate_qtdf_ldf_vdf_backup(md,base_point,calculation_method)
 
+    branches = dict(md.elements(element_type='branch'))
     branch_attrs = md.attributes(element_type='branch')
     bus_attrs = md.attributes(element_type='bus')
+
+    phi_q_from, phi_q_to = calculate_phi_q_constant(branches,branch_attrs['names'],bus_attrs['names'])
+    phi_loss_q_from, phi_loss_q_to = calculate_phi_loss_q_constant(branches,branch_attrs['names'],bus_attrs['names'])
+
     _len_bus = len(bus_attrs['names'])
     _mapping_bus = {i: bus_attrs['names'][i] for i in list(range(0,_len_bus))}
     _len_branch = len(branch_attrs['names'])
@@ -129,3 +135,18 @@ def create_dicts_of_qtdf_losses(md,base_point=BasePointType.SOLUTION, calculatio
 
         bus['vdf_c'] = vdf_c[idx]
 
+        _row_phi_q_from = {branch_attrs['names'][i]: phi_q_from[idx, i] for i in list(range(0, _len_branch)) if
+                         phi_q_from[idx, i] != 0.}
+        bus['phi_q_from'] = _row_phi_q_from
+
+        _row_phi_q_to = {branch_attrs['names'][i]: phi_q_to[idx, i] for i in list(range(0, _len_branch)) if
+                       phi_q_to[idx, i] != 0.}
+        bus['phi_q_to'] = _row_phi_q_to
+
+        _row_phi_loss_q_from = {branch_attrs['names'][i]: phi_loss_q_from[idx, i] for i in list(range(0, _len_branch)) if
+                              phi_loss_q_from[idx, i] != 0.}
+        bus['phi_loss_q_from'] = _row_phi_loss_q_from
+
+        _row_phi_loss_q_to = {branch_attrs['names'][i]: phi_loss_q_to[idx, i] for i in list(range(0, _len_branch)) if
+                            phi_loss_q_to[idx, i] != 0.}
+        bus['phi_loss_q_to'] = _row_phi_loss_q_to
