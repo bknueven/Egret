@@ -266,5 +266,3 @@ def calculate_va_from_vj_vr(vj, vr):
         va = math.degrees(math.atan(vj/vr))
         return va
     return None
-
-

@@ -18,11 +18,11 @@ from egret.model_library.transmission.tx_calc import calculate_y_matrix_from_bra
 import egret.model_library.transmission.bus as libbus
 import egret.model_library.transmission.branch as libbranch
 import egret.model_library.transmission.gen as libgen
-from egret.data.data_utils import create_dicts_of_ptdf
-from egret.model_library.defn import CoordinateType, ApproximationType
+import egret.data.data_utils as data_utils
+from egret.model_library.defn import CoordinateType, ApproximationType, BasePointType
 from egret.data.model_data import map_items, zip_items
 from egret.models.copperplate_dispatch import _include_system_feasibility_slack
-from math import pi
+from math import pi, radians
 
 
 def _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, penalty=1000):
@@ -87,13 +87,8 @@ def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, inclu
 
     ### fix the reference bus
     ref_bus = md.data['system']['reference_bus']
-    model.va[ref_bus].fix(0.0)
-
     ref_angle = md.data['system']['reference_bus_angle']
-    if ref_angle != 0.0:
-        raise ValueError('The BTHETA DCOPF formulation currently only supports'
-                         ' a reference bus angle of 0 degrees, but an angle'
-                         ' of {} degrees was found.'.format(ref_angle))
+    model.va[ref_bus].fix(radians(ref_angle))
 
     ### declare the generator real power
     pg_init = {k: (gen_attrs['p_min'][k] + gen_attrs['p_max'][k]) / 2.0 for k in gen_attrs['pg']}
@@ -173,11 +168,11 @@ def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, inclu
     return model, md
 
 
-def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False):
+def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False,base_point=BasePointType.FLATSTART):
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
-    create_dicts_of_ptdf(md)
+    data_utils.create_dicts_of_ptdf(md,base_point=base_point)
 
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))
@@ -244,6 +239,7 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False):
     libbranch.declare_eq_branch_power_ptdf_approx(model=model,
                                                   index_set=branch_attrs['names'],
                                                   branches=branches,
+                                                  buses=buses,
                                                   bus_p_loads=bus_p_loads,
                                                   gens_by_bus=gens_by_bus,
                                                   bus_gs_fixed_shunts=bus_gs_fixed_shunts
@@ -351,8 +347,7 @@ def solve_dcopf(model_data,
         if dcopf_model_generator == create_ptdf_dcopf_model:
             b_dict['lmp'] = value(m.dual[m.eq_p_balance])
             for k, k_dict in branches.items():
-                if k_dict['from_bus'] == b or k_dict['to_bus'] == b:
-                    b_dict['lmp'] += k_dict['ptdf'][b]*value(m.dual[m.eq_pf_branch[k]])
+                b_dict['lmp'] += k_dict['ptdf'][b]*value(m.dual[m.eq_pf_branch[k]])
 
     for k, k_dict in branches.items():
         k_dict['pf'] = value(m.pf[k])
@@ -367,14 +362,76 @@ def solve_dcopf(model_data,
         return md, results
     return md
 
+def check_instance_feasibility(instance, tolerance, active_only=True):
+    infeasibilities = list()
+
+    for con in instance.component_data_objects(pe.Constraint, descend_into=True, sort=True):
+        if active_only == False or con.active == True:
+            resid = compute_constraint_resid(con)
+            if (resid > tolerance):
+                infeasibilities.append(constraint_resid_to_string(con.getname(True), con, resid))
+
+    for var in instance.component_data_objects(pe.Var, descend_into=True, sort=True):
+        lb = var.lb
+        ub = var.ub
+
+        if (ub is not None and lb is not None and ub < lb):
+            infeasibility_found = True
+            infeasibilities.append('Var: {0} has an upper bound ({1}) that is smaller than its lower bound ({2})'.format(
+                var.getname(True), ub, lb))
+        if (ub is not None and value(var) > ub):
+            infeasibility_found = True
+            infeasibilities.append('Var: {0} has an value ({1} that is greater than its upper bound ({2})'.format(
+                var.getname(True), value(var), ub))
+        if (lb and value(var) < lb):
+            infeasibility_found = True
+            infeasibilities.append('Var: {0} has an value ({1}) that is less than its lower bound ({2})'.format(
+                var.getname(True), value(var), lb))
+
+    if len(infeasibilities) > 0:
+        print("*** Infeasibilities found in check_instance_feasibility")
+        for s in infeasibilities:
+            print(s)
+        print("***")
+
+    return len(infeasibilities) == 0
+
+def compute_constraint_resid(con):
+    bodyval = value(con.body)
+    upper_resid = 0
+    if con.upper is not None:
+        upper_resid = max(0, bodyval - value(con.upper))
+    lower_resid = 0
+    if con.lower is not None:
+        lower_resid = max(0, value(con.lower) - bodyval)
+    return  max(upper_resid, lower_resid)
+
+def constraint_resid_to_string(name, con, resid):
+    if con.lower is None and con.upper is None:
+        return '{0:10.4g} | {2:10s} <= {3:10.4g} <= {4:10s} : {1}'.format(resid, name, '-', value(con.body), '-')
+    elif con.lower is None:
+        return '{0:10.4g} | {2:10s} <= {3:10.4g} <= {4:10.4g} : {1}'.format(resid, name, '-', value(con.body), value(con.upper))
+    elif con.upper is None:
+        return '{0:10.4g} | {2:10.4} <= {3:10.4g} <= {4:10s} : {1}'.format(resid, name, value(con.lower), value(con.body), '-')
+    else:
+        return '{0:10.4g} | {2:10.4} <= {3:10.4g} <= {4:10.4g} : {1}'.format(resid, name, value(con.lower), value(con.body), value(con.upper))
+
 
 # if __name__ == '__main__':
 #     import os
 #     from egret.parsers.matpower_parser import create_ModelData
 #
 #     path = os.path.dirname(__file__)
-#     filename = 'pglib_opf_case24_ieee_rts.m'
+#     print(path)
+#     filename = 'pglib_opf_case300_ieee.m'
 #     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
 #     md = create_ModelData(matpower_file)
-#     kwargs = {'include_feasibility_slack':'True'}
-#     md = solve_dcopf(md, "gurobi", dcopf_model_generator=create_ptdf_dcopf_model, **kwargs)
+#
+#     kwargs = {'include_feasibility_slack':False}
+#     md_btheta, m_btheta, results_btheta = solve_dcopf(md, "gurobi", dcopf_model_generator=create_btheta_dcopf_model, return_model=True, return_results=True, **kwargs)
+#
+#     from acopf import solve_acopf
+#     model_data, model, results = solve_acopf(md, "ipopt", return_model=True, return_results=True)
+#     kwargs = {'include_feasibility_slack':False,'base_point':BasePointType.SOLUTION}
+#     md_ptdf, m_ptdf, results_ptdf = solve_dcopf(model_data, "gurobi", dcopf_model_generator=create_ptdf_dcopf_model, return_model=True, return_results=True, **kwargs)
+#
