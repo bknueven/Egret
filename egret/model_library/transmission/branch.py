@@ -402,17 +402,17 @@ def declare_eq_branch_power_ptdf_approx(model, index_set, branches, buses, bus_p
             phi_to = bus['phi_to']
 
             if bus_gs_fixed_shunts[bus_name] != 0.0:
-                if ApproximationType.FDF:
-                    expr -= coef * bus_gs_fixed_shunts[bus_name] * (
+                if approximation_type == ApproximationType.FDF:
+                    expr += coef * bus_gs_fixed_shunts[bus_name] * (
                                 2 * buses[bus_name]["vm"] * m.vm[bus_name] - (buses[bus_name]["vm"]) ** 2)
-                else:
-                    expr -= coef * bus_gs_fixed_shunts[bus_name]
+                elif approximation_type == ApproximationType.PTDF or approximation_type == ApproximationType.PTDF_LOSSES:
+                    expr += coef * bus_gs_fixed_shunts[bus_name]
 
             if bus_p_loads[bus_name] != 0.0:
-                expr -= coef * m.pl[bus_name]
+                expr += coef * m.pl[bus_name]
 
             for gen_name in gens_by_bus[bus_name]:
-                expr += coef * m.pg[gen_name]
+                expr -= coef * m.pg[gen_name]
 
             for _, phi in phi_from.items():
                 expr += coef * phi
@@ -459,16 +459,16 @@ def declare_eq_branch_loss_ptdf_approx(model, index_set, branches, buses, bus_p_
 
             if bus_gs_fixed_shunts[bus_name] != 0.0:
                 if approximation_type == ApproximationType.PTDF_LOSSES:
-                    expr -= coef * bus_gs_fixed_shunts[bus_name]
+                    expr += coef * bus_gs_fixed_shunts[bus_name]
                 elif approximation_type == ApproximationType.FDF:
-                    expr -= coef * bus_gs_fixed_shunts[bus_name] * (
+                    expr += coef * bus_gs_fixed_shunts[bus_name] * (
                             2 * buses[bus_name]["vm"] * m.vm[bus_name] - (buses[bus_name]["vm"]) ** 2)
 
             if bus_p_loads[bus_name] != 0.0:
-                expr -= coef * m.pl[bus_name]
+                expr += coef * m.pl[bus_name]
 
             for gen_name in gens_by_bus[bus_name]:
-                expr += coef * m.pg[gen_name]
+                expr -= coef * m.pg[gen_name]
 
             for _, phi_loss in phi_loss_from.items():
                 expr += coef * phi_loss
@@ -512,13 +512,13 @@ def declare_eq_branch_power_qtdf_approx(model, index_set, branches, buses, bus_q
             phi_q_to = bus['phi_q_to']
 
             if bus_bs_fixed_shunts[bus_name] != 0.0:
-                expr += coef * bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
+                expr -= coef * bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
 
             if bus_q_loads[bus_name] != 0.0:
-                expr -= coef * m.ql[bus_name]
+                expr += coef * m.ql[bus_name]
 
             for gen_name in gens_by_bus[bus_name]:
-                expr += coef * m.qg[gen_name]
+                expr -= coef * m.qg[gen_name]
 
             for _, phi_q in phi_q_from.items():
                 expr += coef * phi_q
@@ -561,13 +561,13 @@ def declare_eq_branch_loss_qtdf_approx(model, index_set, branches, buses, bus_q_
             phi_loss_q_to = bus['phi_loss_q_to']
 
             if bus_bs_fixed_shunts[bus_name] != 0.0:
-                expr += coef * bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
+                expr -= coef * bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
 
             if bus_q_loads[bus_name] != 0.0:
-                expr -= coef * m.ql[bus_name]
+                expr += coef * m.ql[bus_name]
 
             for gen_name in gens_by_bus[bus_name]:
-                expr += coef * m.qg[gen_name]
+                expr -= coef * m.qg[gen_name]
 
             for _, phi_loss_q in phi_loss_q_from.items():
                 expr += coef * phi_loss_q

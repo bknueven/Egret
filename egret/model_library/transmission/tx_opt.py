@@ -396,7 +396,7 @@ def _calculate_pf_constant(branches,buses,index_set_branch,base_point=BasePointT
             tm = buses[to_bus]['va']
 
         pf_constant[idx_row] = 0.5 * g * ((vn/tau) ** 2 - vm ** 2) \
-                               - b/tau * vn * vm * (sin(tn - tm - shift) - cos(tn - tm - shift)*(tn - tm))
+                               - b/tau * vn * vm * (sin(tn - tm + shift) - cos(tn - tm + shift)*(tn - tm))
 
     return pf_constant
 
@@ -439,7 +439,7 @@ def _calculate_qf_constant(branches,buses,index_set_branch,base_point=BasePointT
             tm = buses[to_bus]['va']
 
         qf_constant[idx_row] = 0.5 * (b+bc/2) * (vn**2/tau**2 - vm**2) \
-                               + g/tau * vn * vm * sin(tn - tm - shift)
+                               + g/tau * vn * vm * sin(tn - tm + shift)
 
     return qf_constant
 
@@ -480,7 +480,7 @@ def _calculate_pfl_constant(branches,buses,index_set_branch,base_point=BasePoint
             tm = buses[to_bus]['va']
 
         pfl_constant[idx_row] = g * (vn**2/tau**2 + vm**2) \
-                              - 2 * g/tau * vn * vm * (sin(tn - tm - shift) * (tn - tm) + cos(tn - tm - shift))
+                              - 2 * g/tau * vn * vm * (sin(tn - tm + shift) * (tn - tm) + cos(tn - tm + shift))
 
     return pfl_constant
 
@@ -522,7 +522,7 @@ def _calculate_qfl_constant(branches,buses,index_set_branch,base_point=BasePoint
             tm = buses[to_bus]['va']
 
         qfl_constant[idx_row] = (b+bc/2) * (vn ** 2/tau**2 + vm**2) \
-                               - 2 * b/tau * vn * vm * cos(tn - tm - shift)
+                               - 2 * b/tau * vn * vm * cos(tn - tm + shift)
 
     return qfl_constant
 
