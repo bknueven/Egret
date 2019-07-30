@@ -359,7 +359,7 @@ def solve_dcopf_losses(model_data,
 
     m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
 
-    m, results = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
+    m, results, flag = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
                               symbolic_solver_labels=symbolic_solver_labels,options=options)
 
     # save results data to ModelData object

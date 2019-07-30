@@ -201,8 +201,8 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
                                                   bus_p_loads=bus_p_loads,
                                                   gens_by_bus=gens_by_bus,
                                                   bus_gs_fixed_shunts=bus_gs_fixed_shunts,
-                                                  approximation_type=ApproximationType.FDF,
-                                                  include_constant_term=True
+                                                  include_constant_term=True,
+                                                  approximation_type=ApproximationType.FDF
                                                   )
 
     ### declare the branch reactive power flow approximation constraints
@@ -416,7 +416,7 @@ if __name__ == '__main__':
     from egret.parsers.matpower_parser import create_ModelData
 
     path = os.path.dirname(__file__)
-    filename = 'pglib_opf_case500_tamu.m'
+    filename = 'pglib_opf_case300_ieee.m'
     matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
     md = create_ModelData(matpower_file)
     kwargs = {'include_v_feasibility_slack':True}
@@ -425,7 +425,7 @@ if __name__ == '__main__':
     md = solve_fdf(md, "gurobi",**kwargs)
 
 # not solving pglib_opf_case57_ieee
+# pglib_opf_case500_tamu
 # pglib_opf_case162_ieee_dtc
 # pglib_opf_case179_goc
 # pglib_opf_case300_ieee
-# pglib_opf_case500_tamu

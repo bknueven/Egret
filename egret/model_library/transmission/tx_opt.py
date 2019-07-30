@@ -201,10 +201,10 @@ def _calculate_L22(branches,buses,index_set_branch,index_set_bus,base_point=Base
             tm = buses[to_bus]['va']
 
         idx_col = [key for key, value in _mapping_bus.items() if value == from_bus][0]
-        L22[idx_row][idx_col] = -2 * (b + bc/2)/tau**2 * vn + 2 * b/tau * vm * cos(tn - tm - shift)
+        L22[idx_row][idx_col] = -2 * (b + bc/2)/tau**2 * vn + 2 * b/tau * vm * cos(tn - tm)
 
         idx_col = [key for key, value in _mapping_bus.items() if value == to_bus][0]
-        L22[idx_row][idx_col] = -2 * (b + bc/2) * vm + 2 * b/tau * vn * cos(tn - tm - shift)
+        L22[idx_row][idx_col] = -2 * (b + bc/2) * vm + 2 * b/tau * vn * cos(tn - tm)
 
     return L22
 
@@ -363,7 +363,7 @@ def _calculate_pf_constant(branches,buses,index_set_branch,base_point=BasePointT
     """
     Compute the power flow constant for the taylor series expansion of real power flow as
     a convex combination of the from/to directions, i.e.,
-    pf = 0.5*g*((tau*vn)^2 - vm^2) - tau*vn*vm*b*sin(tn-tm-shift)
+    pf = 0.5*g*((tau*vn)^2 - vm^2) - tau*vn*vm*b*sin(tn-tm+shift)
     """
 
     _len_branch = len(index_set_branch)
@@ -405,7 +405,7 @@ def _calculate_qf_constant(branches,buses,index_set_branch,base_point=BasePointT
     """
     Compute the power flow constant for the taylor series expansion of reactive power flow as
     a convex combination of the from/to directions, i.e.,
-    qf = -0.5*(b+bc/2)*((tau*vn)^2 - vm^2) - tau*vn*vm*g*sin(tn-tm-shift)
+    qf = -0.5*(b+bc/2)*((tau*vn)^2 - vm^2) - tau*vn*vm*g*sin(tn-tm+shift)
     """
 
     _len_branch = len(index_set_branch)
@@ -448,7 +448,7 @@ def _calculate_pfl_constant(branches,buses,index_set_branch,base_point=BasePoint
     """
     Compute the power losses constant for the taylor series expansion of real power losses as
     a convex combination of the from/to directions, i.e.,
-    pfl = g*((tau*vn)^2 + vm^2) - 2*tau*vn*vm*g*cos(tn-tm-shift)
+    pfl = g*((tau*vn)^2 + vm^2) - 2*tau*vn*vm*g*cos(tn-tm+shift)
     """
 
     _len_branch = len(index_set_branch)
@@ -489,7 +489,7 @@ def _calculate_qfl_constant(branches,buses,index_set_branch,base_point=BasePoint
     """
     Compute the power flow constant for the taylor series expansion of reactive power losses as
     a convex combination of the from/to directions, i.e.,
-    qfl = -(b+bc/2)*((tau*vn)^2 + vm^2) + 2*tau*vn*vm*b*cos(tn-tm-shift)
+    qfl = -(b+bc/2)*((tau*vn)^2 + vm^2) + 2*tau*vn*vm*b*cos(tn-tm+shift)
     """
 
     _len_branch = len(index_set_branch)
@@ -679,11 +679,9 @@ def calculate_qtdf_ldf_vdf(md,base_point=BasePointType.SOLUTION,calculation_meth
 
         try:
             SENSI = np.linalg.inv(J0)
-            #SENSI = np.linalg.inv(M)
         except np.linalg.LinAlgError:
             print("Matrix not invertible. Calculating pseudo-inverse instead.")
             SENSI = np.linalg.inv(J0,rcond=1e-7)
-            #SENSI = np.linalg.inv(M,rcond=1e-7)
             pass
         SENSI = SENSI[:-1,:-1]
 
@@ -691,7 +689,20 @@ def calculate_qtdf_ldf_vdf(md,base_point=BasePointType.SOLUTION,calculation_meth
         LDF = np.around(np.matmul(L,SENSI),8) # This is L*(A’*H + 0.5*absA’*L + 2Bs)^-1
 
         VDF = np.around(SENSI,8) # This is X = (A’*H + 0.5*absA’*L + 2Bs)^-1
-        #VDF = np.around(np.linalg.inv(MV),8)
+
+        # CHECK EQN (63): PART 1
+        gens = dict(md.elements(element_type='generator'))
+        gens_by_bus = tx_utils.gens_by_bus(buses, gens)
+
+        QG = list()
+        for bus_name in bus_attrs['names']:
+            tmp = 0
+            for gen_name in gens_by_bus[bus_name]:
+                tmp += gens[gen_name]["qg"]
+            QG.append(tmp)
+        QG = np.array(QG)
+        QL = np.asarray([value for (key,value) in bus_attrs['ql'].items()])
+        TMP = np.matmul(VDF,(QG-QL))
 
     elif calculation_method == SensitivityCalculationMethod.DUAL:
         QTDF = solve_qtdf(md)
@@ -703,24 +714,15 @@ def calculate_qtdf_ldf_vdf(md,base_point=BasePointType.SOLUTION,calculation_meth
     M = M1 + 0.5 * M2
     LDF_constant = -np.matmul(LDF,M) + Lc
     QTDF_constant = -np.matmul(QTDF,M) + Jc
+
     VM = np.asarray([value for (key,value) in bus_attrs['vm'].items()])
     BV = np.matmul(BS, VM)
     M = M - BV
     VDF_constant = -np.matmul(VDF,M)
 
-    gens = dict(md.elements(element_type='generator'))
-    gens_by_bus = tx_utils.gens_by_bus(buses, gens)
-
-    QG = list()
-    for bus_name in bus_attrs['names']:
-        tmp = 0
-        for gen_name in gens_by_bus[bus_name]:
-            tmp += gens[gen_name]["qg"]
-        QG.append(tmp)
-    QG = np.array(QG)
-    QL = np.asarray([value for (key,value) in bus_attrs['ql'].items()])
-    TMP = - M1 - 0.5 * M2 + np.matmul(BS, VM) + QG - QL
-    RESULT = np.matmul(VDF,TMP)
+    # CHECK EQN (63): PART 2
+    V_RESULT = TMP + VDF_constant
+    print(V_RESULT)
 
     return QTDF, LDF, VDF, QTDF_constant, LDF_constant, VDF_constant
 

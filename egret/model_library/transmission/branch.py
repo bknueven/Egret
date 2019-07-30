@@ -428,7 +428,7 @@ def declare_eq_branch_power_ptdf_approx(model, index_set, branches, buses, bus_p
 
 
 def declare_eq_branch_loss_ptdf_approx(model, index_set, branches, buses, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts,
-                                       include_constant_term = True, ldf_tol = 1e-10,
+                                       include_constant_term = False, ldf_tol = 1e-10,
                                         approximation_type = ApproximationType.PTDF_LOSSES):
     """
     Create the equality constraints for losses (from PTDF approximation)
@@ -511,8 +511,8 @@ def declare_eq_branch_power_qtdf_approx(model, index_set, branches, buses, bus_q
             phi_q_from = bus['phi_q_from']
             phi_q_to = bus['phi_q_to']
 
-            if bus_bs_fixed_shunts[bus_name] != 0.0:
-                expr -= coef * bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
+            # if bus_bs_fixed_shunts[bus_name] != 0.0:
+            #     expr -= coef * bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
 
             if bus_q_loads[bus_name] != 0.0:
                 expr += coef * m.ql[bus_name]
@@ -560,8 +560,8 @@ def declare_eq_branch_loss_qtdf_approx(model, index_set, branches, buses, bus_q_
             phi_loss_q_from = bus['phi_loss_q_from']
             phi_loss_q_to = bus['phi_loss_q_to']
 
-            if bus_bs_fixed_shunts[bus_name] != 0.0:
-                expr -= coef * bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
+            # if bus_bs_fixed_shunts[bus_name] != 0.0:
+            #     expr -= coef * bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
 
             if bus_q_loads[bus_name] != 0.0:
                 expr += coef * m.ql[bus_name]

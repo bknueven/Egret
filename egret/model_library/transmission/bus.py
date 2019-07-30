@@ -452,7 +452,7 @@ def declare_ineq_vm_bus_lbub(model, index_set, buses, coordinate_type=Coordinate
                 m.vr[bus_name]**2 + m.vj[bus_name]**2 <= buses[bus_name]['v_max']**2
 
 
-def declare_eq_vm_fdf(model, index_set, buses, bus_q_loads, gens_by_bus, bus_bs_fixed_shunts, vdf_tol = None, **rhs_kwargs):
+def declare_eq_vm_fdf(model, index_set, buses, bus_q_loads, gens_by_bus, bus_bs_fixed_shunts, vdf_tol = 1e-10, **rhs_kwargs):
     """
     Create the inequalities for the voltage magnitudes from the
     voltage variables
@@ -470,10 +470,10 @@ def declare_eq_vm_fdf(model, index_set, buses, bus_q_loads, gens_by_bus, bus_bs_
         vdf = bus['vdf']
         for bus_name, coef in vdf.items():
             if vdf_tol and abs(coef) < vdf_tol:
-                coef = 0.
+                continue
 
-            if bus_bs_fixed_shunts[bus_name] != 0.0:
-                expr += coef * bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
+            # if bus_bs_fixed_shunts[bus_name] != 0.0:
+            #     expr -= coef * bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
 
             if rhs_kwargs:
                 for idx, val in rhs_kwargs.items():
@@ -483,11 +483,11 @@ def declare_eq_vm_fdf(model, index_set, buses, bus_q_loads, gens_by_bus, bus_bs_
                         expr -= eval("m." + val)[bus_name]
 
             if bus_q_loads[bus_name] != 0.0:
-                expr -= coef * m.ql[bus_name]
+                expr += coef * m.ql[bus_name]
 
             for gen_name in gens_by_bus[bus_name]:
-                expr += coef * m.qg[gen_name]
+                expr -= coef * m.qg[gen_name]
 
-        expr += bus['vdf_c']
+        expr = bus['vdf_c']
         m.eq_vm_fdf[_bus_name] = \
             m.vm[_bus_name] == expr
