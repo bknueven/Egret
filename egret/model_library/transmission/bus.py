@@ -488,6 +488,6 @@ def declare_eq_vm_fdf(model, index_set, buses, bus_q_loads, gens_by_bus, bus_bs_
             for gen_name in gens_by_bus[bus_name]:
                 expr -= coef * m.qg[gen_name]
 
-        expr = bus['vdf_c']
+        expr += bus['vdf_c']
         m.eq_vm_fdf[_bus_name] = \
             m.vm[_bus_name] == expr
