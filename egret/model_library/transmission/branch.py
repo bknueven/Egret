@@ -483,6 +483,56 @@ def declare_eq_branch_loss_ptdf_approx(model, index_set, branches, buses, bus_p_
             m.pfl[branch_name] == expr
 
 
+def declare_eq_branch_power_qtdf_approx_original(model, index_set, branches, buses, bus_q_loads, gens_by_bus,
+                                        bus_bs_fixed_shunts, qtdf_tol=1e-10):
+    """
+    Create the equality constraints for reactive power (from QTDF approximation)
+    in the branch
+    """
+    m = model
+
+    con_set = decl.declare_set("_con_eq_branch_power_qtdf_approx_set", model, index_set)
+
+    m.eq_qf_branch = pe.Constraint(con_set)
+    for branch_name in con_set:
+        branch = branches[branch_name]
+        expr = 0
+
+        if branch['branch_type'] == 'transformer':
+            tau = branch['transformer_tap_ratio']
+            shift = math.radians(branch['transformer_phase_shift'])
+            g = tx_calc.calculate_conductance(branch)
+            expr += (g / tau) * shift
+
+        qtdf = branch['qtdf_r']
+        for bus_name, coef in qtdf.items():
+            if qtdf_tol and abs(coef) < qtdf_tol:
+                continue
+            bus = buses[bus_name]
+            phi_q_from = bus['phi_q_from']
+            phi_q_to = bus['phi_q_to']
+
+            # if bus_bs_fixed_shunts[bus_name] != 0.0:
+            #     expr -= coef * bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
+
+            if bus_q_loads[bus_name] != 0.0:
+                expr += coef * m.ql[bus_name]
+
+            for gen_name in gens_by_bus[bus_name]:
+                expr -= coef * m.qg[gen_name]
+
+            for _, phi_q in phi_q_from.items():
+                expr += coef * phi_q
+
+            for _, phi_q in phi_q_to.items():
+                expr -= coef * phi_q
+
+        expr += branch['qtdf_c']
+
+        m.eq_qf_branch[branch_name] = \
+            m.qf[branch_name] == expr
+
+
 def declare_eq_branch_power_qtdf_approx(model, index_set, branches, buses, bus_q_loads, gens_by_bus, bus_bs_fixed_shunts, qtdf_tol = 1e-10):
     """
     Create the equality constraints for reactive power (from QTDF approximation)
@@ -717,3 +767,63 @@ def declare_fdf_thermal_limit(model, index_set, thermal_limits, cuts=10):
 
         # m.ineq_branch_thermal_limit[branch_name,p] = _pf * (m.pf[branch_name] + 0.5*m.pfl[branch_name]) + _qf * (m.qf[branch_name] + 0.5*m.qfl[branch_name]) \
         #                                              <= thermal_limits[branch_name]**2
+
+
+def declare_eq_branch_midpoint_power(model, index_set, branches, coordinate_type=CoordinateType.POLAR):
+    """
+    Create the equality constraints for the real and imaginary power at the
+    midpoint on the branch
+    """
+    assert(coordinate_type != CoordinateType.RECTANGULAR
+           and "Midpoint branch power in rectangular coordinates not implemented.")
+
+    m = model
+    con_set = decl.declare_set("_con_eq_branch_midpoint_power_set", model, index_set)
+
+    m.eq_pf_branch = pe.Constraint(con_set)
+    m.eq_pfl_branch = pe.Constraint(con_set)
+    m.eq_qf_branch = pe.Constraint(con_set)
+    m.eq_qfl_branch = pe.Constraint(con_set)
+    for branch_name in con_set:
+        branch = branches[branch_name]
+
+        from_bus = branch['from_bus']
+        to_bus = branch['to_bus']
+
+        g = tx_calc.calculate_conductance(branch)
+        b = tx_calc.calculate_susceptance(branch)
+        bc = branch['charging_susceptance']
+        tau = 1.0
+
+        if branch['branch_type'] == 'transformer':
+            tau = branch['transformer_tap_ratio']
+
+        m.eq_pf_branch[branch_name] = \
+            m.pf[branch_name] == \
+            0.5 * g * ((m.vm[from_bus] / tau) ** 2 - m.vm[to_bus] ** 2) - (b / tau) * m.vm[from_bus] * \
+            m.vm[to_bus] * pe.sin(m.dva[branch_name])
+
+        m.eq_pfl_branch[branch_name] = \
+            m.pfl[branch_name] == \
+            g * ((m.vm[from_bus] / tau) ** 2 + m.vm[to_bus] ** 2) - 2 * (g / tau) * m.vm[from_bus] * \
+            m.vm[to_bus] * pe.cos(m.dva[branch_name])
+
+        m.eq_qf_branch[branch_name] = \
+            m.qf[branch_name] == \
+            -0.5 * (b + bc / 2) * ((m.vm[from_bus] / tau) ** 2 - m.vm[to_bus] ** 2) - (g / tau) * m.vm[from_bus] * \
+            m.vm[to_bus] * pe.sin(m.dva[branch_name])
+
+        m.eq_qfl_branch[branch_name] = \
+            m.qfl[branch_name] == \
+            -(b + bc / 2) * ((m.vm[from_bus] / tau) ** 2 + m.vm[to_bus] ** 2) + 2 * (b / tau) * m.vm[from_bus] * \
+            m.vm[to_bus] * pe.cos(m.dva[branch_name])
+
+    print('~~~~~~~~~~~CCM INITIALIZATION~~~~~~~~~~~')
+    for branch_name in con_set:
+        print('pf: ', pe.value(m.pf[branch_name]))
+    for branch_name in con_set:
+        print('pfl: ', pe.value(m.pfl[branch_name]))
+    for branch_name in con_set:
+        print('qf: ', pe.value(m.qf[branch_name]))
+    for branch_name in con_set:
+        print('qfl: ', pe.value(m.qfl[branch_name]))

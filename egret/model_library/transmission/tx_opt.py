@@ -88,6 +88,7 @@ def _calculate_J22(branches,buses,index_set_branch,index_set_bus,base_point=Base
     _mapping_branch = {i: index_set_branch[i] for i in list(range(0,_len_branch))}
 
     J22 = np.zeros((_len_branch,_len_bus))
+    QF_compute = np.zeros(_len_branch)
 
     for idx_row, branch_name in _mapping_branch.items():
         branch = branches[branch_name]
@@ -119,7 +120,10 @@ def _calculate_J22(branches,buses,index_set_branch,index_set_bus,base_point=Base
         idx_col = [key for key, value in _mapping_bus.items() if value == to_bus][0]
         J22[idx_row][idx_col] = (b + bc/2) * vm - g/tau * vn * sin(tn - tm)
 
-    return J22
+        QF_compute[idx_row] = (-(b + bc/2)/tau**2 * vn - g/tau * vm * sin(tn - tm))*vn + \
+                               ((b + bc/2) * vm - g/tau * vn * sin(tn - tm))*vm
+
+    return J22, QF_compute
 
 
 def _calculate_L11(branches,buses,index_set_branch,index_set_bus,base_point=BasePointType.FLATSTART):
@@ -175,6 +179,7 @@ def _calculate_L22(branches,buses,index_set_branch,index_set_bus,base_point=Base
     _mapping_branch = {i: index_set_branch[i] for i in list(range(0,_len_branch))}
 
     L22 = np.zeros((_len_branch,_len_bus))
+    QFL_compute = np.zeros(_len_branch)
 
     for idx_row, branch_name in _mapping_branch.items():
         branch = branches[branch_name]
@@ -206,7 +211,10 @@ def _calculate_L22(branches,buses,index_set_branch,index_set_bus,base_point=Base
         idx_col = [key for key, value in _mapping_bus.items() if value == to_bus][0]
         L22[idx_row][idx_col] = -2 * (b + bc/2) * vm + 2 * b/tau * vn * cos(tn - tm)
 
-    return L22
+        QFL_compute[idx_row] = -2 * (b + bc/2)/tau**2 * vn**2 + 2 * b/tau * vn * vm * cos(tn - tm) + \
+                               (-2 * (b + bc/2) * vm**2 + 2 * b/tau * vn * vm * cos(tn - tm))
+
+    return L22, QFL_compute
 
 
 def calculate_phi_constant(branches,index_set_branch,index_set_bus,approximation_type=ApproximationType.PTDF):
@@ -412,6 +420,7 @@ def _calculate_qf_constant(branches,buses,index_set_branch,base_point=BasePointT
     _mapping_branch = {i: index_set_branch[i] for i in list(range(0,_len_branch))}
 
     qf_constant = np.zeros(_len_branch)
+    QF_c_compute = np.zeros(_len_branch)
 
     for idx_row, branch_name in _mapping_branch.items():
         branch = branches[branch_name]
@@ -441,7 +450,10 @@ def _calculate_qf_constant(branches,buses,index_set_branch,base_point=BasePointT
         qf_constant[idx_row] = 0.5 * (b+bc/2) * (vn**2/tau**2 - vm**2) \
                                + g/tau * vn * vm * sin(tn - tm + shift)
 
-    return qf_constant
+        QF_c_compute[idx_row] = 0.5 * (b+bc/2) * (vn**2/tau**2 - vm**2) \
+                               + g/tau * vn * vm * sin(tn - tm + shift)
+
+    return qf_constant, QF_c_compute
 
 
 def _calculate_pfl_constant(branches,buses,index_set_branch,base_point=BasePointType.FLATSTART):
@@ -496,6 +508,7 @@ def _calculate_qfl_constant(branches,buses,index_set_branch,base_point=BasePoint
     _mapping_branch = {i: index_set_branch[i] for i in list(range(0,_len_branch))}
 
     qfl_constant = np.zeros(_len_branch)
+    QFL_c_compute = np.zeros(_len_branch)
 
     for idx_row, branch_name in _mapping_branch.items():
         branch = branches[branch_name]
@@ -523,8 +536,10 @@ def _calculate_qfl_constant(branches,buses,index_set_branch,base_point=BasePoint
 
         qfl_constant[idx_row] = (b+bc/2) * (vn ** 2/tau**2 + vm**2) \
                                - 2 * b/tau * vn * vm * cos(tn - tm + shift)
+        QFL_c_compute[idx_row] = (b+bc/2) * (vn ** 2/tau**2 + vm**2) \
+                               - 2 * b/tau * vn * vm * cos(tn - tm + shift)
 
-    return qfl_constant
+    return qfl_constant, QFL_c_compute
 
 
 def calculate_ptdf(md,base_point=BasePointType.FLATSTART,calculation_method=SensitivityCalculationMethod.INVERT):
@@ -618,6 +633,22 @@ def calculate_ptdf_ldf(md,base_point=BasePointType.SOLUTION,calculation_method=S
 
         PTDF = np.around(np.matmul(J, SENSI),8)
         LDF = np.around(np.matmul(L,SENSI),8)
+
+        gens = dict(md.elements(element_type='generator'))
+        gens_by_bus = tx_utils.gens_by_bus(buses, gens)
+
+        PG = list()
+        for bus_name in bus_attrs['names']:
+            tmp = 0
+            for gen_name in gens_by_bus[bus_name]:
+                tmp += gens[gen_name]["pg"]
+            PG.append(tmp)
+        PG = np.array(PG)
+        PL = np.asarray([value for (key,value) in bus_attrs['pl'].items()])
+
+        PFL = np.matmul(LDF,(PL-PG))
+        PF = np.matmul(PTDF,(PL-PG))
+
     elif calculation_method == SensitivityCalculationMethod.DUAL:
         PTDF = solve_ptdf(md)
         LDF = solve_ldf(md)
@@ -627,6 +658,13 @@ def calculate_ptdf_ldf(md,base_point=BasePointType.SOLUTION,calculation_method=S
     M = M1 + 0.5 * M2
     LDF_constant = -np.matmul(LDF,M) + Lc
     PTDF_constant = -np.matmul(PTDF,M) + Jc
+
+
+    print('PF: ', PF)
+    print('PF+constant: ', PF+PTDF_constant)
+
+    print('PFL: ', PFL)
+    print('PFL+constant: ', PFL+LDF_constant)
 
     return PTDF, LDF, PTDF_constant, LDF_constant
 
@@ -652,8 +690,8 @@ def calculate_qtdf_ldf_vdf(md,base_point=BasePointType.SOLUTION,calculation_meth
     _len_branch = len(index_set_branch)
     _ref_bus_idx = [key for key, value in _mapping_bus.items() if value == reference_bus][0]
 
-    Jc = _calculate_qf_constant(branches,buses,index_set_branch,base_point)
-    Lc = _calculate_qfl_constant(branches,buses,index_set_branch,base_point)
+    Jc, QF_c_compute = _calculate_qf_constant(branches,buses,index_set_branch,base_point)
+    Lc, QFL_c_compute = _calculate_qfl_constant(branches,buses,index_set_branch,base_point)
 
     A = calculate_adjacency_matrix(branches,index_set_branch,index_set_bus)
     AA = calculate_absolute_adjacency_matrix(A)
@@ -665,12 +703,13 @@ def calculate_qtdf_ldf_vdf(md,base_point=BasePointType.SOLUTION,calculation_meth
             BS[idx][idx] = -bus_bs_fixed_shunts[bus_name] * buses[bus_name]['vm']
 
     if calculation_method == SensitivityCalculationMethod.INVERT:
-        J = _calculate_J22(branches,buses,index_set_branch,index_set_bus,base_point) # Derive reactive power flow sensitivity to voltage
-        L = _calculate_L22(branches,buses,index_set_branch,index_set_bus,base_point) # Derive reactive power loss sensitivity to voltage
+        J, QF_compute = _calculate_J22(branches,buses,index_set_branch,index_set_bus,base_point) # Derive reactive power flow sensitivity to voltage
+        L, QFL_compute = _calculate_L22(branches,buses,index_set_branch,index_set_bus,base_point) # Derive reactive power loss sensitivity to voltage
 
         M1 = np.matmul(A.transpose(),J)
         M2 = np.matmul(AA.transpose(),L)
-        M = M1 + 0.5 * M2 + 2 * BS         # Calculate A’*H + 0.5*absA’*L + 2Bs in paper
+        #M = M1 + 0.5 * M2 + 2 * BS         # ORIGINAL
+        M = M1 - 0.5 * M2 + 2 * BS         # Calculate A’*H + 0.5*absA’*L + 2Bs in paper
 
         J0 = np.zeros((_len_bus+1,_len_bus+1))
         J0[:-1,:-1] = M
@@ -678,17 +717,24 @@ def calculate_qtdf_ldf_vdf(md,base_point=BasePointType.SOLUTION,calculation_meth
         J0[_ref_bus_idx][-1] = 1
 
         try:
-            SENSI = np.linalg.inv(J0)
+            #SENSI = np.linalg.inv(J0)
+            SENSI = np.linalg.inv(M)
         except np.linalg.LinAlgError:
             print("Matrix not invertible. Calculating pseudo-inverse instead.")
-            SENSI = np.linalg.inv(J0,rcond=1e-7)
+            #SENSI = np.linalg.inv(J0,rcond=1e-7)
+            SENSI = np.linalg.inv(M,rcond=1e-7)
             pass
-        SENSI = SENSI[:-1,:-1]
+        #SENSI = SENSI[:-1,:-1]
 
-        QTDF = np.around(np.matmul(J, SENSI),8) # This is H*(A’*H + 0.5*absA’*L + 2Bs)^-1
-        LDF = np.around(np.matmul(L,SENSI),8) # This is L*(A’*H + 0.5*absA’*L + 2Bs)^-1
+        QTDF = np.matmul(J, SENSI) # This is H*(A’*H + 0.5*absA’*L + 2Bs)^-1
+        LDF = np.matmul(L,SENSI) # This is L*(A’*H + 0.5*absA’*L + 2Bs)^-1
 
-        VDF = np.around(SENSI,8) # This is X = (A’*H + 0.5*absA’*L + 2Bs)^-1
+        VDF = SENSI # This is X = (A’*H + 0.5*absA’*L + 2Bs)^-1
+
+        # QTDF = np.around(np.matmul(J, SENSI),8) # This is H*(A’*H + 0.5*absA’*L + 2Bs)^-1
+        # LDF = np.around(np.matmul(L,SENSI),8) # This is L*(A’*H + 0.5*absA’*L + 2Bs)^-1
+        #
+        # VDF = np.around(SENSI,8) # This is X = (A’*H + 0.5*absA’*L + 2Bs)^-1
 
         # CHECK EQN (63): PART 1
         gens = dict(md.elements(element_type='generator'))
@@ -696,13 +742,15 @@ def calculate_qtdf_ldf_vdf(md,base_point=BasePointType.SOLUTION,calculation_meth
 
         QG = list()
         for bus_name in bus_attrs['names']:
-            tmp = 0
+            tmp = 0.
             for gen_name in gens_by_bus[bus_name]:
                 tmp += gens[gen_name]["qg"]
             QG.append(tmp)
         QG = np.array(QG)
         QL = np.asarray([value for (key,value) in bus_attrs['ql'].items()])
-        TMP = np.matmul(VDF,(QG-QL))
+
+        QF = np.matmul(QTDF,(QL-QG))
+        QFL = np.matmul(LDF,(QL-QG))
 
     elif calculation_method == SensitivityCalculationMethod.DUAL:
         QTDF = solve_qtdf(md)
@@ -711,7 +759,8 @@ def calculate_qtdf_ldf_vdf(md,base_point=BasePointType.SOLUTION,calculation_meth
 
     M1 = np.matmul(A.transpose(), Jc)
     M2 = np.matmul(AA.transpose(), Lc)
-    M = M1 + 0.5 * M2
+    # M = M1 + 0.5 * M2   # ORIGINAL
+    M = M1 - 0.5 * M2
     LDF_constant = -np.matmul(LDF,M) + Lc
     QTDF_constant = -np.matmul(QTDF,M) + Jc
 
@@ -720,9 +769,21 @@ def calculate_qtdf_ldf_vdf(md,base_point=BasePointType.SOLUTION,calculation_meth
     M = M - BV
     VDF_constant = -np.matmul(VDF,M)
 
-    # CHECK EQN (63): PART 2
-    V_RESULT = TMP + VDF_constant
-    print(V_RESULT)
+    #print('QF: ', QF)
+    #print('QF+CONSTANT: ', QF+QTDF_constant)
+    print('QF: ', QF)
+    print('QTDF_constant: ', QTDF_constant)
+    print('QF+QTDF_constant: ', QF+QTDF_constant)
+    print('***QF_COMPUTE: ', QF_compute)
+    print('***QF_COMPUTE_constant: ', QF_c_compute)
+    print('***QF_COMPUTE+QF_COMPUTE_constant: ', QF_compute+QF_c_compute)
+
+    print('QFL: ', QFL)
+    print('LDF_constant: ', LDF_constant)
+    print('QFL+LDF_constant: ', QFL+LDF_constant)
+    print('***QFL_COMPUTE: ', QFL_compute)
+    print('***QFL_COMPUTE_constant: ', QFL_c_compute)
+    print('***QFL_COMPUTE+QFL_COMPUTE_constant: ', QFL_compute+QFL_c_compute)
 
     return QTDF, LDF, VDF, QTDF_constant, LDF_constant, VDF_constant
 
