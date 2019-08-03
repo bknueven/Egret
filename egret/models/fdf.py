@@ -266,14 +266,14 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
                                         )
 
     ### declare the voltage min and max inequalities
-    # libbus.declare_eq_vm_fdf(model=model,
-    #                          index_set=bus_attrs['names'],
-    #                          buses=buses,
-    #                          bus_q_loads=bus_q_loads,
-    #                          gens_by_bus=gens_by_bus,
-    #                          bus_bs_fixed_shunts=bus_bs_fixed_shunts,
-    #                          **v_rhs_kwargs
-    #                          )
+    libbus.declare_eq_vm_fdf(model=model,
+                             index_set=bus_attrs['names'],
+                             buses=buses,
+                             bus_q_loads=bus_q_loads,
+                             gens_by_bus=gens_by_bus,
+                             bus_bs_fixed_shunts=bus_bs_fixed_shunts,
+                             **v_rhs_kwargs
+                             )
 
     libgen.declare_eq_q_fdf_deviation(model=model,
                                       index_set=gen_attrs['names'],
@@ -613,14 +613,23 @@ if __name__ == '__main__':
     md_ac, m_ac, results = solve_acopf(md, "ipopt", return_model=True,return_results=True,solver_tee=False)
     branch_attrs = md_ac.attributes(element_type='branch')
     print('~~~~~~~~~~~ACOPF RESULTS~~~~~~~~~~~')
+    m_ac.pg.pprint()
     m_ac.pt.pprint()
     m_ac.pf.pprint()
     print('pfl: ', branch_attrs['pfl'])
+    m_ac.qg.pprint()
     m_ac.qt.pprint()
     m_ac.qf.pprint()
     print('qfl: ', branch_attrs['qfl'])
     print('~~~~~~~~~~~FDF INITIALIZATION~~~~~~~~~~~')
-    md, m, results = solve_fdf(md_ac, "gurobi", return_model=True,return_results=True,solver_tee=False, **kwargs)
+    md, m, results = solve_fdf(md_ac, "gurobi", return_model=True,return_results=True,solver_tee=True, **kwargs)
+    print('~~~~~~~~~~~FDF RESULTS~~~~~~~~~~~')
+    m.pg.pprint()
+    m.pf.pprint()
+    m.pfl.pprint()
+    m.qg.pprint()
+    m.qf.pprint()
+    m.qfl.pprint()
     # m_ac.pg.pprint()
     # m.pg.pprint()
     # m_ac.pt.pprint()

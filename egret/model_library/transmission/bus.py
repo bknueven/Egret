@@ -173,7 +173,8 @@ def declare_eq_p_balance_fdf(model, index_set, buses, bus_p_loads, gens_by_bus, 
 
     p_expr = sum(m.pg[gen_name] for bus_name in index_set for gen_name in gens_by_bus[bus_name])
     p_expr -= sum(m.pl[bus_name] for bus_name in index_set if bus_p_loads[bus_name] is not None)
-    p_expr -= sum(bus_gs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2) for bus_name in index_set if bus_gs_fixed_shunts[bus_name] != 0.0)
+    p_expr -= sum(bus_gs_fixed_shunts[bus_name] for bus_name in index_set if bus_gs_fixed_shunts[bus_name] != 0.0)
+    # p_expr -= sum(bus_gs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2) for bus_name in index_set if bus_gs_fixed_shunts[bus_name] != 0.0)
 
     if rhs_kwargs:
         for idx,val in rhs_kwargs.items():
@@ -198,6 +199,7 @@ def declare_eq_q_balance_fdf(model, index_set, buses, bus_q_loads, gens_by_bus, 
 
     q_expr = sum(m.qg[gen_name] for bus_name in index_set for gen_name in gens_by_bus[bus_name])
     q_expr -= sum(m.ql[bus_name] for bus_name in index_set if bus_q_loads[bus_name] is not None)
+    # q_expr += sum(bus_bs_fixed_shunts[bus_name] for bus_name in index_set if bus_bs_fixed_shunts[bus_name] != 0.0)
     q_expr += sum(bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2) for bus_name in index_set if bus_bs_fixed_shunts[bus_name] != 0.0)
 
 
@@ -472,15 +474,15 @@ def declare_eq_vm_fdf(model, index_set, buses, bus_q_loads, gens_by_bus, bus_bs_
             if vdf_tol and abs(coef) < vdf_tol:
                 continue
 
-            # if bus_bs_fixed_shunts[bus_name] != 0.0:
-            #     expr -= coef * bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
-
             if rhs_kwargs:
                 for idx, val in rhs_kwargs.items():
                     if idx == 'include_feasibility_slack_pos':
                         expr += eval("m." + val)[bus_name]
                     if idx == 'include_feasibility_slack_neg':
                         expr -= eval("m." + val)[bus_name]
+
+            if bus_bs_fixed_shunts[bus_name] != 0.0:
+                expr -= coef * bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
 
             if bus_q_loads[bus_name] != 0.0:
                 expr += coef * m.ql[bus_name]
@@ -494,6 +496,7 @@ def declare_eq_vm_fdf(model, index_set, buses, bus_q_loads, gens_by_bus, bus_bs_
 
 
 def declare_eq_p_balance_ccm_approx(model, index_set,
+                                   buses,
                                    bus_p_loads,
                                    gens_by_bus,
                                    bus_gs_fixed_shunts,
@@ -518,7 +521,7 @@ def declare_eq_p_balance_ccm_approx(model, index_set,
         p_expr += sum([m.pf[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
 
         if bus_gs_fixed_shunts[bus_name] != 0.0:
-            p_expr -= bus_gs_fixed_shunts[bus_name]
+            p_expr -= bus_gs_fixed_shunts[bus_name]*(buses[bus_name]["vm"])**2
 
         if bus_p_loads[bus_name] != 0.0: # only applies to fixed loads, otherwise may cause an error
             p_expr -= m.pl[bus_name]
@@ -538,6 +541,7 @@ def declare_eq_p_balance_ccm_approx(model, index_set,
 
 
 def declare_eq_q_balance_ccm_approx(model, index_set,
+                                   buses,
                                    bus_q_loads,
                                    gens_by_bus,
                                    bus_bs_fixed_shunts,
@@ -562,7 +566,7 @@ def declare_eq_q_balance_ccm_approx(model, index_set,
         q_expr += sum([m.qf[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
 
         if bus_bs_fixed_shunts[bus_name] != 0.0:
-            q_expr += bus_bs_fixed_shunts[bus_name]
+            q_expr += bus_bs_fixed_shunts[bus_name]*(buses[bus_name]["vm"])**2
 
         if bus_q_loads[bus_name] != 0.0: # only applies to fixed loads, otherwise may cause an error
             q_expr -= m.ql[bus_name]

@@ -708,8 +708,8 @@ def calculate_qtdf_ldf_vdf(md,base_point=BasePointType.SOLUTION,calculation_meth
 
         M1 = np.matmul(A.transpose(),J)
         M2 = np.matmul(AA.transpose(),L)
-        #M = M1 + 0.5 * M2 + 2 * BS         # ORIGINAL
-        M = M1 - 0.5 * M2 + 2 * BS         # Calculate A’*H + 0.5*absA’*L + 2Bs in paper
+        #M = M1 + 0.5 * M2 + 2 * BS         # ORIGINAL: A’*H + 0.5*absA’*L + 2Bs in paper
+        M = M1 - 0.5 * M2                  # Calculate A’*H - 0.5*absA’*L
 
         J0 = np.zeros((_len_bus+1,_len_bus+1))
         J0[:-1,:-1] = M
@@ -764,9 +764,9 @@ def calculate_qtdf_ldf_vdf(md,base_point=BasePointType.SOLUTION,calculation_meth
     LDF_constant = -np.matmul(LDF,M) + Lc
     QTDF_constant = -np.matmul(QTDF,M) + Jc
 
-    VM = np.asarray([value for (key,value) in bus_attrs['vm'].items()])
-    BV = np.matmul(BS, VM)
-    M = M - BV
+    # VM = np.asarray([value for (key,value) in bus_attrs['vm'].items()])
+    # BV = np.matmul(BS, VM)
+    # M = M - BV # ORIGINAL
     VDF_constant = -np.matmul(VDF,M)
 
     #print('QF: ', QF)

@@ -461,8 +461,9 @@ def declare_eq_branch_loss_ptdf_approx(model, index_set, branches, buses, bus_p_
                 if approximation_type == ApproximationType.PTDF_LOSSES:
                     expr += coef * bus_gs_fixed_shunts[bus_name]
                 elif approximation_type == ApproximationType.FDF:
-                    expr += coef * bus_gs_fixed_shunts[bus_name] * (
-                            2 * buses[bus_name]["vm"] * m.vm[bus_name] - (buses[bus_name]["vm"]) ** 2)
+                    expr += coef * bus_gs_fixed_shunts[bus_name]*(buses[bus_name]["vm"]) ** 2
+                    # expr += coef * bus_gs_fixed_shunts[bus_name] * (
+                    #         2 * buses[bus_name]["vm"] * m.vm[bus_name] - (buses[bus_name]["vm"]) ** 2)
 
             if bus_p_loads[bus_name] != 0.0:
                 expr += coef * m.pl[bus_name]
@@ -483,7 +484,7 @@ def declare_eq_branch_loss_ptdf_approx(model, index_set, branches, buses, bus_p_
             m.pfl[branch_name] == expr
 
 
-def declare_eq_branch_power_qtdf_approx_original(model, index_set, branches, buses, bus_q_loads, gens_by_bus,
+def declare_eq_branch_power_qtdf_approx(model, index_set, branches, buses, bus_q_loads, gens_by_bus,
                                         bus_bs_fixed_shunts, qtdf_tol=1e-10):
     """
     Create the equality constraints for reactive power (from QTDF approximation)
@@ -512,57 +513,8 @@ def declare_eq_branch_power_qtdf_approx_original(model, index_set, branches, bus
             phi_q_from = bus['phi_q_from']
             phi_q_to = bus['phi_q_to']
 
-            # if bus_bs_fixed_shunts[bus_name] != 0.0:
-            #     expr -= coef * bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
-
-            if bus_q_loads[bus_name] != 0.0:
-                expr += coef * m.ql[bus_name]
-
-            for gen_name in gens_by_bus[bus_name]:
-                expr -= coef * m.qg[gen_name]
-
-            for _, phi_q in phi_q_from.items():
-                expr += coef * phi_q
-
-            for _, phi_q in phi_q_to.items():
-                expr -= coef * phi_q
-
-        expr += branch['qtdf_c']
-
-        m.eq_qf_branch[branch_name] = \
-            m.qf[branch_name] == expr
-
-
-def declare_eq_branch_power_qtdf_approx(model, index_set, branches, buses, bus_q_loads, gens_by_bus, bus_bs_fixed_shunts, qtdf_tol = 1e-10):
-    """
-    Create the equality constraints for reactive power (from QTDF approximation)
-    in the branch
-    """
-    m = model
-
-    con_set = decl.declare_set("_con_eq_branch_power_qtdf_approx_set", model, index_set)
-
-    m.eq_qf_branch = pe.Constraint(con_set)
-    for branch_name in con_set:
-        branch = branches[branch_name]
-        expr = 0
-
-        if branch['branch_type'] == 'transformer':
-            tau = branch['transformer_tap_ratio']
-            shift = math.radians(branch['transformer_phase_shift'])
-            g = tx_calc.calculate_conductance(branch)
-            expr += (g/tau) * shift
-
-        qtdf = branch['qtdf_r']
-        for bus_name, coef in qtdf.items():
-            if qtdf_tol and abs(coef) < qtdf_tol:
-                continue
-            bus = buses[bus_name]
-            phi_q_from = bus['phi_q_from']
-            phi_q_to = bus['phi_q_to']
-
-            # if bus_bs_fixed_shunts[bus_name] != 0.0:
-            #     expr -= coef * bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
+            if bus_bs_fixed_shunts[bus_name] != 0.0:
+                expr -= coef * bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
 
             if bus_q_loads[bus_name] != 0.0:
                 expr += coef * m.ql[bus_name]
@@ -610,8 +562,8 @@ def declare_eq_branch_loss_qtdf_approx(model, index_set, branches, buses, bus_q_
             phi_loss_q_from = bus['phi_loss_q_from']
             phi_loss_q_to = bus['phi_loss_q_to']
 
-            # if bus_bs_fixed_shunts[bus_name] != 0.0:
-            #     expr -= coef * bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
+            if bus_bs_fixed_shunts[bus_name] != 0.0:
+                expr -= coef * bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2)
 
             if bus_q_loads[bus_name] != 0.0:
                 expr += coef * m.ql[bus_name]
