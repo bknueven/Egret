@@ -605,8 +605,8 @@ if __name__ == '__main__':
     from egret.parsers.matpower_parser import create_ModelData
 
     path = os.path.dirname(__file__)
-    filename = 'pglib_opf_case3_lmbd.m'
-    matpower_file = os.path.join(path, '../../download/pglib-opf/', filename)
+    filename = 'pglib_opf_case2848_rte.m'
+    matpower_file = os.path.join(path, '../../download/pglib-opf-master/', filename)
     md = create_ModelData(matpower_file)
     kwargs = {'include_v_feasibility_slack':True}
     from egret.models.acopf import solve_acopf
@@ -622,7 +622,9 @@ if __name__ == '__main__':
     m_ac.qf.pprint()
     print('qfl: ', branch_attrs['qfl'])
     print('~~~~~~~~~~~FDF INITIALIZATION~~~~~~~~~~~')
+    kwargs = {'include_v_feasibility_slack':False}
     md, m, results = solve_fdf(md_ac, "gurobi", return_model=True,return_results=True,solver_tee=True, **kwargs)
+    exit()
     print('~~~~~~~~~~~FDF RESULTS~~~~~~~~~~~')
     m.pg.pprint()
     m.pf.pprint()

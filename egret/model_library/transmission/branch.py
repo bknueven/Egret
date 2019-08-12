@@ -461,9 +461,8 @@ def declare_eq_branch_loss_ptdf_approx(model, index_set, branches, buses, bus_p_
                 if approximation_type == ApproximationType.PTDF_LOSSES:
                     expr += coef * bus_gs_fixed_shunts[bus_name]
                 elif approximation_type == ApproximationType.FDF:
-                    expr += coef * bus_gs_fixed_shunts[bus_name]*(buses[bus_name]["vm"]) ** 2
-                    # expr += coef * bus_gs_fixed_shunts[bus_name] * (
-                    #         2 * buses[bus_name]["vm"] * m.vm[bus_name] - (buses[bus_name]["vm"]) ** 2)
+                    expr += coef * bus_gs_fixed_shunts[bus_name] * (
+                            2 * buses[bus_name]["vm"] * m.vm[bus_name] - (buses[bus_name]["vm"]) ** 2)
 
             if bus_p_loads[bus_name] != 0.0:
                 expr += coef * m.pl[bus_name]

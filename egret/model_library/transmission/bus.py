@@ -173,8 +173,8 @@ def declare_eq_p_balance_fdf(model, index_set, buses, bus_p_loads, gens_by_bus, 
 
     p_expr = sum(m.pg[gen_name] for bus_name in index_set for gen_name in gens_by_bus[bus_name])
     p_expr -= sum(m.pl[bus_name] for bus_name in index_set if bus_p_loads[bus_name] is not None)
-    p_expr -= sum(bus_gs_fixed_shunts[bus_name] for bus_name in index_set if bus_gs_fixed_shunts[bus_name] != 0.0)
-    # p_expr -= sum(bus_gs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2) for bus_name in index_set if bus_gs_fixed_shunts[bus_name] != 0.0)
+    # p_expr -= sum(bus_gs_fixed_shunts[bus_name] for bus_name in index_set if bus_gs_fixed_shunts[bus_name] != 0.0)
+    p_expr -= sum(bus_gs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2) for bus_name in index_set if bus_gs_fixed_shunts[bus_name] != 0.0)
 
     if rhs_kwargs:
         for idx,val in rhs_kwargs.items():

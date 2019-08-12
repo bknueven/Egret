@@ -35,3 +35,4 @@ class RelaxationType(Enum):
 class SensitivityCalculationMethod(Enum):
     INVERT = 1
     DUAL = 2
+    TRANSPOSE = 3

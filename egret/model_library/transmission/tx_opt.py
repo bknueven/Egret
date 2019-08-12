@@ -14,11 +14,13 @@ optimization sub-problems
 """
 from math import pi, inf, radians, cos, sin
 import numpy as np
+import scipy as sp
 from egret.model_library.defn import SensitivityCalculationMethod
 import egret.model_library.transmission.tx_utils as tx_utils
 from egret.models.acpf import create_psv_acpf_model
 #from egret.models.dcopf import solve_dcopf, create_btheta_dcopf_model
 from egret.models.acopf import _load_solution_to_model_data, create_psv_acopf_model, solve_acopf
+from egret.models.ccm import create_ccm_model
 import egret.model_library.decl as decl
 from egret.common.solver_interface import _solve_model
 import pyomo.environ as pe
@@ -660,11 +662,11 @@ def calculate_ptdf_ldf(md,base_point=BasePointType.SOLUTION,calculation_method=S
     PTDF_constant = -np.matmul(PTDF,M) + Jc
 
 
-    print('PF: ', PF)
-    print('PF+constant: ', PF+PTDF_constant)
-
-    print('PFL: ', PFL)
-    print('PFL+constant: ', PFL+LDF_constant)
+    # print('PF: ', PF)
+    # print('PF+constant: ', PF+PTDF_constant)
+    #
+    # print('PFL: ', PFL)
+    # print('PFL+constant: ', PFL+LDF_constant)
 
     return PTDF, LDF, PTDF_constant, LDF_constant
 
@@ -696,12 +698,11 @@ def calculate_qtdf_ldf_vdf(md,base_point=BasePointType.SOLUTION,calculation_meth
     A = calculate_adjacency_matrix(branches,index_set_branch,index_set_bus)
     AA = calculate_absolute_adjacency_matrix(A)
 
-    bus_bs_fixed_shunts, _ = tx_utils.dict_of_bus_fixed_shunts(buses, shunts)
-    BS = np.zeros((_len_bus, _len_bus))
-    for idx, bus_name in _mapping_bus.items():
-        if bus_bs_fixed_shunts[bus_name] != 0.0:
-            BS[idx][idx] = -bus_bs_fixed_shunts[bus_name] * buses[bus_name]['vm']
+    QTDF = np.zeros((_len_branch, _len_bus))
+    LDF = np.zeros((_len_branch, _len_bus))
+    VDF = np.zeros((_len_bus, _len_bus))
 
+    import time
     if calculation_method == SensitivityCalculationMethod.INVERT:
         J, QF_compute = _calculate_J22(branches,buses,index_set_branch,index_set_bus,base_point) # Derive reactive power flow sensitivity to voltage
         L, QFL_compute = _calculate_L22(branches,buses,index_set_branch,index_set_bus,base_point) # Derive reactive power loss sensitivity to voltage
@@ -709,7 +710,7 @@ def calculate_qtdf_ldf_vdf(md,base_point=BasePointType.SOLUTION,calculation_meth
         M1 = np.matmul(A.transpose(),J)
         M2 = np.matmul(AA.transpose(),L)
         #M = M1 + 0.5 * M2 + 2 * BS         # ORIGINAL: A’*H + 0.5*absA’*L + 2Bs in paper
-        M = M1 - 0.5 * M2                  # Calculate A’*H - 0.5*absA’*L
+        M  = M1 - 0.5 * M2                  # Calculate A’*H - 0.5*absA’*L
 
         J0 = np.zeros((_len_bus+1,_len_bus+1))
         J0[:-1,:-1] = M
@@ -717,24 +718,15 @@ def calculate_qtdf_ldf_vdf(md,base_point=BasePointType.SOLUTION,calculation_meth
         J0[_ref_bus_idx][-1] = 1
 
         try:
-            #SENSI = np.linalg.inv(J0)
             SENSI = np.linalg.inv(M)
         except np.linalg.LinAlgError:
             print("Matrix not invertible. Calculating pseudo-inverse instead.")
-            #SENSI = np.linalg.inv(J0,rcond=1e-7)
             SENSI = np.linalg.inv(M,rcond=1e-7)
             pass
-        #SENSI = SENSI[:-1,:-1]
+        QTDF = np.matmul(J, SENSI) # This is H*(A’*H + 0.5*absA’*L)^-1
+        LDF = np.matmul(L,SENSI) # This is L*(A’*H + 0.5*absA’*L)^-1
 
-        QTDF = np.matmul(J, SENSI) # This is H*(A’*H + 0.5*absA’*L + 2Bs)^-1
-        LDF = np.matmul(L,SENSI) # This is L*(A’*H + 0.5*absA’*L + 2Bs)^-1
-
-        VDF = SENSI # This is X = (A’*H + 0.5*absA’*L + 2Bs)^-1
-
-        # QTDF = np.around(np.matmul(J, SENSI),8) # This is H*(A’*H + 0.5*absA’*L + 2Bs)^-1
-        # LDF = np.around(np.matmul(L,SENSI),8) # This is L*(A’*H + 0.5*absA’*L + 2Bs)^-1
-        #
-        # VDF = np.around(SENSI,8) # This is X = (A’*H + 0.5*absA’*L + 2Bs)^-1
+        VDF = SENSI # This is X = (A’*H + 0.5*absA’*L)^-1
 
         # CHECK EQN (63): PART 1
         gens = dict(md.elements(element_type='generator'))
@@ -756,6 +748,33 @@ def calculate_qtdf_ldf_vdf(md,base_point=BasePointType.SOLUTION,calculation_meth
         QTDF = solve_qtdf(md)
         LDF = solve_qldf(md)
         VDF = solve_vdf(md)
+    elif calculation_method == SensitivityCalculationMethod.TRANSPOSE:
+        J, QF_compute = _calculate_J22(branches,buses,index_set_branch,index_set_bus,base_point) # Derive reactive power flow sensitivity to voltage
+        L, QFL_compute = _calculate_L22(branches,buses,index_set_branch,index_set_bus,base_point) # Derive reactive power loss sensitivity to voltage
+
+        M1 = np.matmul(A.transpose(),J)
+        M2 = np.matmul(AA.transpose(),L)
+        M  = M1 - 0.5 * M2                  # Calculate A’*H - 0.5*absA’*L
+        n,m = M.shape
+
+        start = time.clock()
+        SENSI = np.linalg.inv(M)
+        _QTDF = np.matmul(J, SENSI) # This is H*(A’*H + 0.5*absA’*L)^-1
+        _LDF = np.matmul(L,SENSI) # This is L*(A’*H + 0.5*absA’*L)^-1
+        elapsed = time.clock() - start
+        print("INVERT TIME: ", elapsed)
+
+        start = time.clock()
+        for idx, bus_name in _mapping_branch.items():
+            b = np.zeros((m, 1))
+            b[idx] = 1
+            y = np.matmul(J.transpose(),b)
+            r = np.linalg.solve(M.transpose(),y)
+            QTDF[idx,:] = r
+        elapsed = time.clock() - start
+        print("TRANSPOSE TIME: ", elapsed)
+
+    # sp.sparse.linalg.spsolve(M.transpose(), np.concatenate((y.T, y2.T, np.zeros((1, 3))), axis=0).T).T
 
     M1 = np.matmul(A.transpose(), Jc)
     M2 = np.matmul(AA.transpose(), Lc)
@@ -769,8 +788,8 @@ def calculate_qtdf_ldf_vdf(md,base_point=BasePointType.SOLUTION,calculation_meth
     # M = M - BV # ORIGINAL
     VDF_constant = -np.matmul(VDF,M)
 
-    #print('QF: ', QF)
-    #print('QF+CONSTANT: ', QF+QTDF_constant)
+    print('QF: ', QF)
+    print('QF+CONSTANT: ', QF+QTDF_constant)
     print('QF: ', QF)
     print('QTDF_constant: ', QTDF_constant)
     print('QF+QTDF_constant: ', QF+QTDF_constant)
@@ -827,7 +846,6 @@ def solve_ptdf(model_data):
     Calculates the sensitivity of the voltage angle to real power injections
     """
     kwargs = {'return_model':'True', 'return_results':'True', 'include_feasibility_slack':'False'}
-    #md, m, results = solve_dcopf(model_data, "ipopt", dcopf_model_generator=create_btheta_dcopf_model, **kwargs)
     md, m, results = solve_acopf(model_data, "ipopt", acopf_model_generator=create_psv_acopf_model, **kwargs)
 
     m, md = create_psv_acpf_model(md)
@@ -870,21 +888,34 @@ def solve_qtdf(model_data):
     Calculates the sensitivity of the voltage magnitude to reactive power injections
     """
     kwargs = {'return_model':'True', 'return_results':'True', 'include_feasibility_slack':'False'}
-    #md, m, results = solve_dcopf(model_data, "ipopt", dcopf_model_generator=create_btheta_dcopf_model, **kwargs)
     md, m, results = solve_acopf(model_data, "ipopt", acopf_model_generator=create_psv_acopf_model, **kwargs)
 
     m, md = create_psv_acpf_model(md)
+    m, md = create_ccm_model(md)
+    m, results, flag = _solve_model(m, "ipopt", solver_tee=False)
     #_solve_fixed_acpf(m, md)
     _solve_fixed_acqf(m, md)
 
-    ref_bus = md.data['system']['reference_bus']
+    gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))
     branches = dict(md.elements(element_type='branch'))
     bus_attrs = md.attributes(element_type='bus')
     branch_attrs = md.attributes(element_type='branch')
 
-    for k, k_dict in branches.items():
-        k_dict['qfl'] = k_dict['qf'] + k_dict['qt']
+    shunts = dict(md.elements(element_type='shunt'))
+    bus_bs_fixed_shunts, _ = tx_utils.dict_of_bus_fixed_shunts(buses, shunts)
+    inlet_branches_by_bus, outlet_branches_by_bus = \
+        tx_utils.inlet_outlet_branches_by_bus(branches, buses)
+    gens_by_bus = tx_utils.gens_by_bus(buses, gens)
+
+    for b, b_dict in buses.items():
+        b_dict['q_slack'] = - value(m.pl[b])
+        for g in gens_by_bus[b]:
+            b_dict['q_slack'] += value(m.qg[g])
+        if bus_bs_fixed_shunts[b] != 0.0:
+            b_dict['q_slack'] += bus_bs_fixed_shunts[b] * value(m.vm[b])**2
+        b_dict['q_slack'] -= sum([value(m.qf[branch_name]) for branch_name in outlet_branches_by_bus[b]])
+        b_dict['q_slack'] += sum([value(m.qf[branch_name]) for branch_name in inlet_branches_by_bus[b]])
 
     m, md = _dual_qtdf_model(md)
 
@@ -1307,27 +1338,12 @@ def _dual_qtdf_model(md):
 
     libbranch.declare_var_qf(model=m, index_set=branch_attrs['names'], initialize=branch_attrs['qf'])
 
-    decl.declare_var('qfl', model=m, index_set=branch_attrs['names'], initialize=branch_attrs['qfl'])
+    # decl.declare_var('qfl', model=m, index_set=branch_attrs['names'], initialize=branch_attrs['qfl'])
+    # m.qfl.fix()
 
+    decl.declare_var('q_slack', model=m, index_set=bus_attrs['names'], initialize=bus_attrs['q_slack'])
     ref_bus = md.data['system']['reference_bus']
-    #m.vm[ref_bus].fix()
-
-    slack_init = {ref_bus: 0}
-    slack_bounds = {ref_bus: (0, inf)}
-    decl.declare_var('q_slack_pos', model=m, index_set=[ref_bus],
-                     initialize=slack_init, bounds=slack_bounds
-                     )
-    decl.declare_var('q_slack_neg', model=m, index_set=[ref_bus],
-                     initialize=slack_init, bounds=slack_bounds
-                     )
-    # slack_init = {k: 0 for k in bus_attrs['names']}
-    # slack_bounds = {k: (0, inf) for k in bus_attrs['names']}
-    # decl.declare_var('q_slack_pos', model=m, index_set=bus_attrs['names'],
-    #                  initialize=slack_init, bounds=slack_bounds
-    #                  )
-    # decl.declare_var('q_slack_neg', model=m, index_set=bus_attrs['names'],
-    #                  initialize=slack_init, bounds=slack_bounds
-    #                  )
+    #m.q_slack[ref_bus].fix()
 
     con_set = decl.declare_set('_con_eq_q_balance', m, bus_attrs['names'])
     m.eq_q_balance = pe.Constraint(con_set)
@@ -1336,27 +1352,25 @@ def _dual_qtdf_model(md):
     gens_by_bus = tx_utils.gens_by_bus(buses, gens)
 
     for bus_name in con_set:
-        q_expr = sum([m.qf[branch_name] for branch_name in outlet_branches_by_bus[bus_name]])
-        q_expr -= sum([m.qf[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
+        q_expr = -sum([m.qf[branch_name] for branch_name in outlet_branches_by_bus[bus_name]])
+        q_expr += sum([m.qf[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
 
-        q_expr -= 0.5 * sum(m.qfl[branch_name] for branch_name in outlet_branches_by_bus[bus_name])
-        q_expr -= 0.5 * sum(m.qfl[branch_name] for branch_name in inlet_branches_by_bus[bus_name])
+        # q_expr -= 0.5 * sum(m.qfl[branch_name] for branch_name in outlet_branches_by_bus[bus_name])
+        # q_expr -= 0.5 * sum(m.qfl[branch_name] for branch_name in inlet_branches_by_bus[bus_name])
 
         if bus_bs_fixed_shunts[bus_name] != 0.0:
-            q_expr += bus_bs_fixed_shunts[bus_name] * value(m.vm[bus_name]) * m.vm[bus_name]
+            q_expr += bus_bs_fixed_shunts[bus_name] * value(m.vm[bus_name])**2# (2*value(m.vm[bus_name]) * m.vm[bus_name] - value(m.vm[bus_name])**2)
 
         if bus_p_loads[bus_name] != 0.0:  # only applies to fixed loads, otherwise may cause an error
             q_expr -= m.ql[bus_name]
 
-        if bus_name == ref_bus:
-            q_expr -= m.q_slack_pos[bus_name]
-            q_expr += m.q_slack_neg[bus_name]
+        q_expr -= m.q_slack[bus_name]
 
         for gen_name in gens_by_bus[bus_name]:
             q_expr += m.qg[gen_name]
 
         m.eq_q_balance[bus_name] = \
-            -q_expr == 0.0
+            q_expr == 0.0
 
     index_set_bus = bus_attrs['names']
     _len_bus = len(index_set_bus)
@@ -1369,8 +1383,8 @@ def _dual_qtdf_model(md):
     con_set = decl.declare_set('_con_eq_qf', m, branch_attrs['names'])
     m.eq_qf_branch = pe.Constraint(con_set)
 
-    J22 = _calculate_J22(branches, buses, index_set_branch, index_set_bus, base_point=BasePointType.SOLUTION)
-    qf_constant = _calculate_qf_constant(branches, buses, index_set_branch, base_point=BasePointType.SOLUTION)
+    J22, _ = _calculate_J22(branches, buses, index_set_branch, index_set_bus, base_point=BasePointType.SOLUTION)
+    qf_constant, _ = _calculate_qf_constant(branches, buses, index_set_branch, base_point=BasePointType.SOLUTION)
 
     for _k, branch_name in _mapping_branch.items():
         branch = branches[branch_name]
@@ -1382,21 +1396,21 @@ def _dual_qtdf_model(md):
 
             m.eq_qf_branch[branch_name] = m.qf[branch_name] == expr
 
-    con_set = decl.declare_set('_con_eq_qfl', m, branch_attrs['names'])
-    m.eq_qfl_branch = pe.Constraint(con_set)
-
-    L22 = _calculate_L22(branches, buses, index_set_branch, index_set_bus, base_point=BasePointType.SOLUTION)
-    qfl_constant = _calculate_qfl_constant(branches, buses, index_set_branch, base_point=BasePointType.SOLUTION)
-
-    for _k, branch_name in _mapping_branch.items():
-        branch = branches[branch_name]
-        if branch["in_service"]:
-            expr = 0
-            for _b, bus_name in _mapping_bus.items():
-                expr += L22[_k][_b] * m.vm[bus_name]
-            expr += qfl_constant[_k]
-
-            m.eq_qfl_branch[branch_name] = m.qfl[branch_name] == expr
+    # con_set = decl.declare_set('_con_eq_qfl', m, branch_attrs['names'])
+    # m.eq_qfl_branch = pe.Constraint(con_set)
+    #
+    # L22, _ = _calculate_L22(branches, buses, index_set_branch, index_set_bus, base_point=BasePointType.SOLUTION)
+    # qfl_constant, _ = _calculate_qfl_constant(branches, buses, index_set_branch, base_point=BasePointType.SOLUTION)
+    #
+    # for _k, branch_name in _mapping_branch.items():
+    #     branch = branches[branch_name]
+    #     if branch["in_service"]:
+    #         expr = 0
+    #         for _b, bus_name in _mapping_bus.items():
+    #             expr += L22[_k][_b] * m.vm[bus_name]
+    #         expr += qfl_constant[_k]
+    #
+    #         m.eq_qfl_branch[branch_name] = m.qfl[branch_name] == expr
 
     return m, md
 
@@ -1427,6 +1441,9 @@ def _solve_fixed_acpf(m, md):
 
     m.dual = pe.Suffix(direction=pe.Suffix.IMPORT_EXPORT)
     m, results, flag = _solve_model(m,"ipopt")
+    if not flag:
+        raise Exception("ACPF did not solve.")
+    # from egret.models.ccm import _load_solution_to_model_data
     _load_solution_to_model_data(m, md)
     tx_utils.scale_ModelData_to_pu(md, inplace=True)
     return
@@ -1454,13 +1471,15 @@ def _solve_fixed_acqf(m, md):
         if gens_by_bus[bus_name]:
             #if bus_name is not ref_bus:
             m.va[bus_name].fix()
-    m.vm[ref_bus].fix()
-    #m.va[ref_bus].unfix()
+    # m.vm[ref_bus].fix()
+    # m.va[ref_bus].unfix()
 
     m.dual = pe.Suffix(direction=pe.Suffix.IMPORT_EXPORT)
     m, results, flag = _solve_model(m,"ipopt")
+    if not flag:
+        raise Exception("ACPF did not solve.")
+    # from egret.models.ccm import _load_solution_to_model_data
     _load_solution_to_model_data(m, md)
-    m.pprint()
     tx_utils.scale_ModelData_to_pu(md, inplace=True)
     return
 
@@ -1470,14 +1489,18 @@ if __name__ == '__main__':
     from egret.parsers.matpower_parser import create_ModelData
 
     path = os.path.dirname(__file__)
-    filename = 'pglib_opf_case14_ieee.m'
-    #filename = 'pglib_opf_case5_pjm.m'
-    matpower_file = os.path.join(path, '../../../download/pglib-opf/', filename)
+    #filename = 'pglib_opf_case588_sdet.m'
+    filename = 'pglib_opf_case3_lmbd.m'
+    matpower_file = os.path.join(path, '../../../download/pglib-opf-master/', filename)
     md = create_ModelData(matpower_file)
     from egret.models.acopf import solve_acopf
-    #md = solve_acopf(md, "ipopt")
-    #solve_ptdf(md)
-    #solve_ldf(md)
+
+    md = solve_acopf(md, "ipopt")
+
+    qtdf_check, _, _, _, _, _ = calculate_qtdf_ldf_vdf(md, base_point=BasePointType.SOLUTION, calculation_method=SensitivityCalculationMethod.TRANSPOSE)
+
+    #solve_ptdf(md) # CHECKED
+    #solve_ldf(md) # CHECKED
     solve_qtdf(md)
     #solve_qldf(md)
     #solve_vdf(md)
