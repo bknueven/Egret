@@ -544,24 +544,28 @@ def _calculate_qfl_constant(branches,buses,index_set_branch,base_point=BasePoint
     return qfl_constant, QFL_c_compute
 
 
-def calculate_ptdf(md,base_point=BasePointType.FLATSTART,calculation_method=SensitivityCalculationMethod.INVERT):
+def calculate_ptdf(md,base_point=BasePointType.FLATSTART,calculation_method=SensitivityCalculationMethod.TRANSPOSE):
     """
     Calculates the sensitivity of voltage angle to real power injections
     """
 
-    if calculation_method == SensitivityCalculationMethod.INVERT:
-        branches = dict(md.elements(element_type='branch'))
-        buses = dict(md.elements(element_type='bus'))
-        branch_attrs = md.attributes(element_type='branch')
-        bus_attrs = md.attributes(element_type='bus')
-        index_set_branch = branch_attrs['names']
-        index_set_bus = bus_attrs['names']
-        reference_bus = md.data['system']['reference_bus']
+    branches = dict(md.elements(element_type='branch'))
+    buses = dict(md.elements(element_type='bus'))
+    branch_attrs = md.attributes(element_type='branch')
+    bus_attrs = md.attributes(element_type='bus')
+    index_set_branch = branch_attrs['names']
+    index_set_bus = bus_attrs['names']
+    reference_bus = md.data['system']['reference_bus']
 
-        _len_bus = len(index_set_bus)
-        _mapping_bus = {i: index_set_bus[i] for i in list(range(0,_len_bus))}
-        _len_branch = len(index_set_branch)
-        _ref_bus_idx = [key for key, value in _mapping_bus.items() if value == reference_bus][0]
+    _len_bus = len(index_set_bus)
+    _mapping_bus = {i: index_set_bus[i] for i in list(range(0, _len_bus))}
+    _len_branch = len(index_set_branch)
+    _mapping_branch = {i: index_set_branch[i] for i in list(range(0, _len_branch))}
+    _ref_bus_idx = [key for key, value in _mapping_bus.items() if value == reference_bus][0]
+
+    PTDF = np.zeros((_len_branch, _len_bus))
+
+    if calculation_method == SensitivityCalculationMethod.INVERT:
 
         J = _calculate_J11(branches,buses,index_set_branch,index_set_bus,base_point,approximation_type=ApproximationType.PTDF)
         A = calculate_adjacency_matrix(branches,index_set_branch,index_set_bus)
@@ -583,6 +587,26 @@ def calculate_ptdf(md,base_point=BasePointType.FLATSTART,calculation_method=Sens
         PTDF = np.around(np.matmul(J,SENSI),8)
     elif calculation_method == SensitivityCalculationMethod.DUAL:
         PTDF = solve_ptdf(md)
+    elif calculation_method == SensitivityCalculationMethod.TRANSPOSE:
+        J = _calculate_J11(branches,buses,index_set_branch,index_set_bus,base_point,approximation_type=ApproximationType.PTDF)
+        A = calculate_adjacency_matrix(branches,index_set_branch,index_set_bus)
+        M = np.matmul(A.transpose(),J)
+
+        J0 = np.zeros((_len_bus+1,_len_bus+1))
+        J0[:-1,:-1] = M
+        J0[-1][_ref_bus_idx] = 1
+        J0[_ref_bus_idx][-1] = 1
+        SENSI = np.linalg.inv(J0)
+        SENSI = SENSI[:-1,:-1]
+        _PTDF = np.matmul(J, SENSI)
+
+        for idx, branch_name in _mapping_branch.items():
+            b = np.zeros((len(_mapping_branch), 1))
+            b[idx] = 1
+            y = np.matmul(J.transpose(),b)
+            y = np.vstack([y,0])
+            r = np.linalg.solve(J0.transpose(),y)
+            PTDF[idx,:] = r[:-1].T
 
     return PTDF
 
@@ -690,6 +714,7 @@ def calculate_qtdf_ldf_vdf(md,base_point=BasePointType.SOLUTION,calculation_meth
     _len_bus = len(index_set_bus)
     _mapping_bus = {i: index_set_bus[i] for i in list(range(0, _len_bus))}
     _len_branch = len(index_set_branch)
+    _mapping_branch = {i: index_set_branch[i] for i in list(range(0, _len_branch))}
     _ref_bus_idx = [key for key, value in _mapping_bus.items() if value == reference_bus][0]
 
     Jc, QF_c_compute = _calculate_qf_constant(branches,buses,index_set_branch,base_point)
@@ -765,12 +790,12 @@ def calculate_qtdf_ldf_vdf(md,base_point=BasePointType.SOLUTION,calculation_meth
         print("INVERT TIME: ", elapsed)
 
         start = time.clock()
-        for idx, bus_name in _mapping_branch.items():
-            b = np.zeros((m, 1))
+        for idx, branch_name in _mapping_branch.items():
+            b = np.zeros((len(_mapping_branch), 1))
             b[idx] = 1
             y = np.matmul(J.transpose(),b)
             r = np.linalg.solve(M.transpose(),y)
-            QTDF[idx,:] = r
+            QTDF[idx,:] = r.T
         elapsed = time.clock() - start
         print("TRANSPOSE TIME: ", elapsed)
 
@@ -1490,17 +1515,19 @@ if __name__ == '__main__':
 
     path = os.path.dirname(__file__)
     #filename = 'pglib_opf_case588_sdet.m'
-    filename = 'pglib_opf_case3_lmbd.m'
+    filename = 'pglib_opf_case5_pjm.m'
     matpower_file = os.path.join(path, '../../../download/pglib-opf-master/', filename)
     md = create_ModelData(matpower_file)
     from egret.models.acopf import solve_acopf
 
     md = solve_acopf(md, "ipopt")
 
-    qtdf_check, _, _, _, _, _ = calculate_qtdf_ldf_vdf(md, base_point=BasePointType.SOLUTION, calculation_method=SensitivityCalculationMethod.TRANSPOSE)
+    #qtdf_check, _, _, _, _, _ = calculate_qtdf_ldf_vdf(md, base_point=BasePointType.SOLUTION, calculation_method=SensitivityCalculationMethod.TRANSPOSE)
+    calculate_ptdf(md, base_point=BasePointType.SOLUTION,
+                                                       calculation_method=SensitivityCalculationMethod.TRANSPOSE)
 
-    #solve_ptdf(md) # CHECKED
+    solve_ptdf(md) # CHECKED
     #solve_ldf(md) # CHECKED
-    solve_qtdf(md)
+    #solve_qtdf(md)
     #solve_qldf(md)
     #solve_vdf(md)
