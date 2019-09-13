@@ -323,6 +323,57 @@ def _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
     J11 = sp.sparse.coo_matrix( (data, (row,col)), shape=(_len_branch, _len_bus))
     return J11.tocsr()
 
+def _calculate_J22(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_idx,base_point=BasePointType.FLATSTART):
+    """
+    Compute the power flow Jacobian for partial derivative of reactive power flow to voltage magnitude
+    """
+    _len_bus = len(index_set_bus)
+    _len_branch = len(index_set_branch)
+
+    data = []
+    row = []
+    col = []
+
+    for idx_row, branch_name in enumerate(index_set_branch):
+        branch = branches[branch_name]
+        from_bus = branch['from_bus']
+        to_bus = branch['to_bus']
+
+        tau = 1.0
+        if branch['branch_type'] == 'transformer':
+            tau = branch['transformer_tap_ratio']
+        g = calculate_conductance(branch)
+        b = calculate_susceptance(branch)
+        bc = branch['charging_susceptance']
+
+        if base_point == BasePointType.FLATSTART:
+            vn = 1.
+            vm = 1.
+            tn = 0.
+            tm = 0.
+        elif base_point == BasePointType.SOLUTION: # TODO: check that we are loading the correct values (or results)
+            vn = buses[from_bus]['vm']
+            vm = buses[to_bus]['vm']
+            tn = buses[from_bus]['va']
+            tm = buses[to_bus]['va']
+
+        val = -(b + bc/2)/tau**2 * vn - g/tau * vm * sin(tn - tm)
+
+        idx_col = mapping_bus_to_idx[from_bus]
+        row.append(idx_row)
+        col.append(idx_col)
+        data.append(val)
+
+        val = (b + bc/2) * vm - g/tau * vn * sin(tn - tm)
+
+        idx_col = mapping_bus_to_idx[to_bus]
+        row.append(idx_row)
+        col.append(idx_col)
+        data.append(val)
+
+    J22 = sp.sparse.coo_matrix( (data, (row,col)), shape=(_len_branch, _len_bus))
+    return J22.tocsr()
+
 
 def _calculate_L11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_idx,base_point=BasePointType.FLATSTART):
     """
@@ -372,6 +423,57 @@ def _calculate_L11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
     return L11.tocsr()
 
 
+def _calculate_L22(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_idx,base_point=BasePointType.FLATSTART):
+    """
+    Compute the power flow Jacobian for partial derivative of reactive power losses to voltage magnitude
+    """
+    _len_bus = len(index_set_bus)
+    _len_branch = len(index_set_branch)
+
+    row = []
+    col = []
+    data = []
+
+    for idx_row, branch_name in enumerate(index_set_branch):
+        branch = branches[branch_name]
+        from_bus = branch['from_bus']
+        to_bus = branch['to_bus']
+
+        tau = 1.0
+        if branch['branch_type'] == 'transformer':
+            tau = branch['transformer_tap_ratio']
+        b = calculate_susceptance(branch)
+        bc = branch['charging_susceptance']
+
+        if base_point == BasePointType.FLATSTART:
+            vn = 1.
+            vm = 1.
+            tn = 0.
+            tm = 0.
+        elif base_point == BasePointType.SOLUTION: # TODO: check that we are loading the correct values (or results)
+            vn = buses[from_bus]['vm']
+            vm = buses[to_bus]['vm']
+            tn = buses[from_bus]['va']
+            tm = buses[to_bus]['va']
+
+        val = -2 * (b + bc/2)/tau**2 * vn + 2 * b/tau * vm * cos(tn - tm)
+
+        idx_col = mapping_bus_to_idx[from_bus]
+        row.append(idx_row)
+        col.append(idx_col)
+        data.append(val)
+
+        val = -2 * (b + bc/2) * vm + 2 * b/tau * vn * cos(tn - tm)
+
+        idx_col = mapping_bus_to_idx[to_bus]
+        row.append(idx_row)
+        col.append(idx_col)
+        data.append(val)
+
+    L22 = sp.sparse.coo_matrix((data,(row,col)),shape=(_len_branch,_len_bus))
+    return L22.tocsr()
+
+
 def calculate_phi_constant(branches,index_set_branch,index_set_bus,approximation_type=ApproximationType.PTDF, mapping_bus_to_idx=None):
     """
     Compute the phase shifter constant for fixed phase shift transformers
@@ -410,6 +512,46 @@ def calculate_phi_constant(branches,index_set_branch,index_set_bus,approximation
         row_to.append(mapping_bus_to_idx[to_bus])
         col.append(idx_col)
         data.append(b)
+
+    phi_from = sp.sparse.coo_matrix((data,(row_from,col)), shape=(_len_bus,_len_branch))
+    phi_to = sp.sparse.coo_matrix((data,(row_to,col)), shape=(_len_bus,_len_branch))
+
+    return phi_from.tocsr(), phi_to.tocsr()
+
+
+def calculate_phi_q_constant(branches,index_set_branch,index_set_bus,mapping_bus_to_idx=None):
+    """
+    Compute the phase shifter constant impact on reactive power flow for fixed phase shift transformers
+    """
+    _len_bus = len(index_set_bus)
+
+    if mapping_bus_to_idx is None:
+        mapping_bus_to_idx = {bus_n: i for i, bus_n in enumerate(index_set_bus)}
+
+    _len_branch = len(index_set_branch)
+
+    row_from = []
+    row_to = []
+    col = []
+    data = []
+
+    for idx_col, branch_name in enumerate(index_set_branch):
+        branch = branches[branch_name]
+        from_bus = branch['from_bus']
+        to_bus = branch['to_bus']
+
+        tau = 1.0
+        shift = 0.0
+        if branch['branch_type'] == 'transformer':
+            tau = branch['transformer_tap_ratio']
+            shift = math.radians(branch['transformer_phase_shift'])
+
+        g = calculate_conductance(branch)*(shift/tau)
+
+        row_from.append(mapping_bus_to_idx[from_bus])
+        row_to.append(mapping_bus_to_idx[to_bus])
+        col.append(idx_col)
+        data.append(g)
 
     phi_from = sp.sparse.coo_matrix((data,(row_from,col)), shape=(_len_bus,_len_branch))
     phi_to = sp.sparse.coo_matrix((data,(row_to,col)), shape=(_len_bus,_len_branch))
@@ -462,6 +604,46 @@ def calculate_phi_loss_constant(branches,index_set_branch,index_set_bus,approxim
     return phi_loss_from.tocsr(), phi_loss_to.tocsr()
 
 
+def calculate_phi_loss_q_constant(branches,index_set_branch,index_set_bus,mapping_bus_to_idx=None):
+    """
+    Compute the phase shifter constant for fixed phase shift transformers
+    """
+    _len_bus = len(index_set_bus)
+
+    if mapping_bus_to_idx is None:
+        mapping_bus_to_idx = {bus_n: i for i, bus_n in enumerate(index_set_bus)}
+
+    _len_branch = len(index_set_branch)
+
+    row_from = []
+    row_to = []
+    col = []
+    data = []
+
+    for idx_col, branch_name in enumerate(index_set_branch):
+        branch = branches[branch_name]
+        from_bus = branch['from_bus']
+        to_bus = branch['to_bus']
+
+        tau = 1.0
+        shift = 0.0
+        if branch['branch_type'] == 'transformer':
+            tau = branch['transformer_tap_ratio']
+            shift = math.radians(branch['transformer_phase_shift'])
+
+        b = calculate_susceptance(branch)*(1/tau)*shift**2
+
+        row_from.append(mapping_bus_to_idx[from_bus])
+        row_to.append(mapping_bus_to_idx[to_bus])
+        col.append(idx_col)
+        data.append(b)
+
+    phi_loss_from = sp.sparse.coo_matrix((data,(row_from,col)),shape=(_len_bus,_len_branch))
+    phi_loss_to = sp.sparse.coo_matrix((data,(row_to,col)),shape=(_len_bus,_len_branch))
+
+    return phi_loss_from.tocsr(), phi_loss_to.tocsr()
+
+
 def _calculate_pf_constant(branches,buses,index_set_branch,base_point=BasePointType.FLATSTART):
     """
     Compute the power flow constant for the taylor series expansion of real power flow as
@@ -491,7 +673,7 @@ def _calculate_pf_constant(branches,buses,index_set_branch,base_point=BasePointT
             vm = 1.
             tn = 0.
             tm = 0.
-        elif base_point == BasePointType.SOLUTION: # TODO: check that we are loading the correct values (or results)
+        elif base_point == BasePointType.SOLUTION:
             vn = buses[from_bus]['vm']
             vm = buses[to_bus]['vm']
             tn = buses[from_bus]['va']
@@ -501,6 +683,48 @@ def _calculate_pf_constant(branches,buses,index_set_branch,base_point=BasePointT
                                - b * vn * vm * (sin(tn - tm + shift) - cos(tn - tm + shift)*(tn - tm))
 
     return pf_constant
+
+
+def _calculate_qf_constant(branches,buses,index_set_branch,base_point=BasePointType.FLATSTART):
+    """
+    Compute the power flow constant for the taylor series expansion of reactive power flow as
+    a convex combination of the from/to directions, i.e.,
+    qf = -0.5*(b+bc/2)*((tau*vn)^2 - vm^2) - tau*vn*vm*g*sin(tn-tm+shift)
+    """
+
+    _len_branch = len(index_set_branch)
+    ## this will be fully dense
+    qf_constant = np.zeros(_len_branch)
+
+    for idx_row, branch_name in enumerate(index_set_branch):
+        branch = branches[branch_name]
+        from_bus = branch['from_bus']
+        to_bus = branch['to_bus']
+
+        tau = 1.0
+        shift = 0.0
+        if branch['branch_type'] == 'transformer':
+            tau = branch['transformer_tap_ratio']
+            shift = math.radians(branch['transformer_phase_shift'])
+        g = calculate_conductance(branch)
+        b = calculate_susceptance(branch)/tau
+        bc = branch['charging_susceptance']
+
+        if base_point == BasePointType.FLATSTART:
+            vn = 1.
+            vm = 1.
+            tn = 0.
+            tm = 0.
+        elif base_point == BasePointType.SOLUTION:
+            vn = buses[from_bus]['vm']
+            vm = buses[to_bus]['vm']
+            tn = buses[from_bus]['va']
+            tm = buses[to_bus]['va']
+
+        qf_constant[idx_row] = 0.5 * (b+bc/2) * (vn**2/tau**2 - vm**2) \
+                               + g/tau * vn * vm * sin(tn - tm + shift)
+
+    return qf_constant
 
 
 def _calculate_pfl_constant(branches,buses,index_set_branch,base_point=BasePointType.FLATSTART):
@@ -544,6 +768,48 @@ def _calculate_pfl_constant(branches,buses,index_set_branch,base_point=BasePoint
                               - 2 * g * vn * vm * (sin(tn - tm + shift) * (tn - tm) + cos(tn - tm + shift))
 
     return pfl_constant
+
+
+def _calculate_qfl_constant(branches,buses,index_set_branch,base_point=BasePointType.FLATSTART):
+    """
+    Compute the power flow constant for the taylor series expansion of reactive power losses as
+    a convex combination of the from/to directions, i.e.,
+    qfl = -(b+bc/2)*((tau*vn)^2 + vm^2) + 2*tau*vn*vm*b*cos(tn-tm+shift)
+    """
+
+    _len_branch = len(index_set_branch)
+
+    ## this will be fully dense
+    qfl_constant = np.zeros(_len_branch)
+
+    for idx_row, branch_name in enumerate(index_set_branch):
+        branch = branches[branch_name]
+        from_bus = branch['from_bus']
+        to_bus = branch['to_bus']
+
+        tau = 1.0
+        shift = 0.0
+        if branch['branch_type'] == 'transformer':
+            tau = branch['transformer_tap_ratio']
+            shift = math.radians(branch['transformer_phase_shift'])
+        b = calculate_susceptance(branch)
+        bc = branch['charging_susceptance']
+
+        if base_point == BasePointType.FLATSTART:
+            vn = 1.
+            vm = 1.
+            tn = 0.
+            tm = 0.
+        elif base_point == BasePointType.SOLUTION: # TODO: check that we are loading the correct values (or results)
+            vn = buses[from_bus]['vm']
+            vm = buses[to_bus]['vm']
+            tn = buses[from_bus]['va']
+            tm = buses[to_bus]['va']
+
+        qfl_constant[idx_row] = (b+bc/2) * (vn ** 2/tau**2 + vm**2) \
+                               - 2 * b/tau * vn * vm * cos(tn - tm + shift)
+
+    return qfl_constant
 
 
 def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.FLATSTART,sparse_index_set_branch=None,mapping_bus_to_idx=None):
@@ -716,9 +982,119 @@ def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_b
     M2 = AA@Lc
     M = M1 + 0.5 * M2
     LDF_constant = -LDF@M + Lc
+    #PTDF_constant = -PTDF@M + Jc
 
-    return PTDF, LDF, LDF_constant
+    return PTDF, LDF, LDF_constant#, PTDF_constant
 
+
+def calculate_qtdf_ldf_vdf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.SOLUTION,sparse_index_set_branch=None,sparse_index_set_bus=None,mapping_bus_to_idx=None):
+    """
+    Calculates the sensitivity of the voltage magnitude to the reactive power injections and losses on the lines. Includes the
+    calculation of the constant term for the quadratic losses on the lines.
+    Parameters
+    ----------
+    branches: dict{}
+        The dictionary of branches for the test case
+    buses: dict{}
+        The dictionary of buses for the test case
+    index_set_branch: list
+        The list of keys for branches for the test case
+    index_set_bus: list
+        The list of keys for buses for the test case
+    reference_bus: key value
+        The reference bus key value
+    base_point: egret.model_library_defn.BasePointType
+        The base-point type for calculating the PTDF and LDF matrix
+    sparse_index_set_branch: list
+        The list of keys for branches needed to compute a sparse PTDF matrix
+    mapping_bus_to_idx: dict
+        A map from bus names to indices for matrix construction. If None,
+        will be inferred from index_set_bus.
+    """
+    _len_bus = len(index_set_bus)
+
+    if mapping_bus_to_idx is None:
+        mapping_bus_to_idx = {bus_n: i for i, bus_n in enumerate(index_set_bus)}
+
+    _len_branch = len(index_set_branch)
+
+    _ref_bus_idx = mapping_bus_to_idx[reference_bus]
+
+    J = _calculate_J22(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_idx,base_point)
+    L = _calculate_L22(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_idx,base_point)
+    Jc = _calculate_qf_constant(branches,buses,index_set_branch,base_point)
+    Lc = _calculate_qfl_constant(branches,buses,index_set_branch,base_point)
+
+    if np.all(Jc == 0) and np.all(Lc == 0):
+        return np.zeros((_len_branch, _len_bus)), np.zeros((_len_branch, _len_bus)), np.zeros((1,_len_branch))
+
+    A = calculate_adjacency_matrix_transpose(branches,index_set_branch,index_set_bus, mapping_bus_to_idx)
+    AA = calculate_absolute_adjacency_matrix(A)
+    M1 = A@J
+    M2 = AA@L
+    M = M1 - 0.5 * M2
+
+    if (sparse_index_set_branch is None or len(sparse_index_set_branch) == _len_branch) and \
+            (sparse_index_set_bus is None or len(sparse_index_set_bus) == _len_bus):
+        ## the resulting matrix after inversion will be fairly dense,
+        ## the scipy documenation recommends using dense for the inversion
+        ## as well
+        try:
+            SENSI = np.linalg.inv(M.A)
+        except np.linalg.LinAlgError:
+            print("Matrix not invertible. Calculating pseudo-inverse instead.")
+            SENSI = np.linalg.pinv(M.A,rcond=1e-7)
+            pass
+        VDF = SENSI
+        PTDF = np.matmul(J.A, SENSI)
+        LDF = np.matmul(L.A, SENSI)
+    elif len(sparse_index_set_branch) < _len_branch or len(sparse_index_set_bus) < _len_bus:
+        B_J = np.array([], dtype=np.int64).reshape(_len_bus + 1, 0)
+        B_L = np.array([], dtype=np.int64).reshape(_len_bus + 1, 0)
+        _sparse_mapping_branch = {i: branch_n for i, branch_n in enumerate(index_set_branch) if branch_n in sparse_index_set_branch}
+
+        for idx, branch_name in _sparse_mapping_branch.items():
+            b = np.zeros((_len_branch, 1))
+            b[idx] = 1
+
+            _tmp_J = np.matmul(J.transpose(), b)
+            _tmp_J = np.vstack([_tmp_J, 0])
+            B_J = np.concatenate((B_J, _tmp_J), axis=1)
+
+            _tmp_L = np.matmul(L.transpose(), b)
+            _tmp_L = np.vstack([_tmp_L, 0])
+            B_L = np.concatenate((B_L, _tmp_L), axis=1)
+
+        row_idx = list(_sparse_mapping_branch.keys())
+        QTDF = sp.sparse.lil_matrix((_len_branch, _len_bus))
+        _qtdf = sp.sparse.linalg.spsolve(M.transpose().tocsr(), B_J).T
+        QTDF[row_idx] = _qtdf[:, :-1]
+
+        LDF = sp.sparse.lil_matrix((_len_branch, _len_bus))
+        _ldf = sp.sparselinalg.spsolve(M.transpose().tocsr(), B_L).T
+        LDF[row_idx] = _ldf[:, :-1]
+
+        Bb = np.array([], dtype=np.int64).reshape(_len_bus + 1, 0)
+        _sparse_mapping_bus = {i: bus_n for i, bus_n in enumerate(index_set_bus) if bus_n in sparse_index_set_bus}
+
+        for idx, bus_name in _sparse_mapping_bus.items():
+            b = np.zeros((_len_bus, 1))
+            b[idx] = 1
+            Bb = np.concatenate((Bb, b), axis=1)
+
+        row_idx = list(_sparse_mapping_bus.keys())
+        VDF = sp.sparse.lil_matrix((_len_bus, _len_bus))
+        _vdf = sp.sparse.linalg.spsolve(M.transpose().tocsr(), Bb).T
+        VDF[row_idx] = _vdf[:, :-1]
+
+    M1 = A@Jc
+    M2 = AA@Lc
+    M = M1 - 0.5 * M2
+    LDF_constant = -LDF@M + Lc
+    QTDF_constant = -QTDF@M + Jc
+    VDF_constant = -VDF@M
+
+    return QTDF, LDF, VDF, LDF_constant, QTDF_constant, VDF_constant
 
 
 def calculate_adjacency_matrix_transpose(branches,index_set_branch,index_set_bus, mapping_bus_to_idx):

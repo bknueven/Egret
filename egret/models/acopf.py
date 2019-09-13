@@ -759,11 +759,10 @@ def solve_acopf(model_data,
 
     m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
 
-    m, results, flag = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
-                              symbolic_solver_labels=symbolic_solver_labels,options=options)
+    m, results, solver = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
+                              symbolic_solver_labels=symbolic_solver_labels,options=options, return_solver=True)
 
-    if flag:
-        _load_solution_to_model_data(m, md)
+    _load_solution_to_model_data(m, md)
     #m.pprint()
 
     if return_model and return_results:
