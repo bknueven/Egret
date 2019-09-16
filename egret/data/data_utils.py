@@ -181,6 +181,127 @@ class PTDFMatrix(object):
         yield from self.buses_keys
 
 
+class FDFMatrix(PTDFLossesMatrix):
+
+    def _calculate(self):
+        self._calculate_ptdf()
+        self._calculate_phi_adjust()
+        self._calculate_phi_loss_constant()
+        self._calculate_phase_shift()
+        self._calculate_losses_phase_shift()
+
+    def _calculate_ptdf(self):
+        ptdf_r, ldf, ldf_c = tx_calc.calculate_ptdf_ldf(self._branches, self._buses, self.branches_keys,
+                                                        self.buses_keys, self._reference_bus, self._base_point, \
+                                                        mapping_bus_to_idx=self._busname_to_index_map)
+
+        self.PTDFM = ptdf_r
+        self.LDF = ldf
+        self.LDF_C = ldf_c
+
+        ## protect the arrays using numpy
+        self.PTDFM.flags.writeable = False
+        self.LDF.flags.writeable = False
+        self.LDF_C.flags.writeable = False
+
+
+    def _calculate_qtdf(self):
+        qtdf_r, qldf, vdf, qtdf_c, qldf_c, vdf_c = tx_calc.calculate_qtdf_ldf_vdf(self._branches, self._buses, self.branches_keys,
+                                                        self.buses_keys, self._reference_bus, self._base_point, \
+                                                        mapping_bus_to_idx=self._busname_to_index_map)
+
+        self.QTDFM = qtdf_r
+        self.QLDF = qldf
+        self.VDF = vdf
+        self.QTDF_C = qtdf_c
+        self.QLDF_C = qldf_c
+        self.VDF_C = vdf_c
+
+        ## protect the arrays using numpy
+        self.QTDFM.flags.writeable = False
+        self.QLDF.flags.writeable = False
+        self.VDF.flags.writeable = False
+        self.QTDF_C.flags.writeable = False
+        self.QLDF_C.flags.writeable = False
+        self.VDF_C.flags.writeable = False
+
+    def _calculate_phi_from_phi_to(self):
+        return tx_calc.calculate_phi_constant(self._branches, self.branches_keys, self.buses_keys,
+                                              ApproximationType.PTDF_LOSSES,
+                                              mapping_bus_to_idx=self._busname_to_index_map)
+
+    def _calculate_phi_loss_constant(self):
+        phi_loss_from, phi_loss_to = tx_calc.calculate_phi_loss_constant(self._branches, self.branches_keys,
+                                                                         self.buses_keys, ApproximationType.PTDF_LOSSES,
+                                                                         mapping_bus_to_idx=self._busname_to_index_map)
+
+        ## hold onto these for line outages
+        self._phi_loss_from = phi_loss_from
+        self._phi_loss_to = phi_loss_to
+
+        ## sum the across the columns, which are indexed by branch
+        phi_losses_adjust_array = phi_loss_from - phi_loss_to
+
+        ## sum across the rows to get the total impact, and convert
+        ## to dense for fast operations later
+        self.phi_losses_adjust_array = phi_losses_adjust_array.sum(axis=1).T.A[0]
+
+        ## protect the array using numpy
+        self.phi_losses_adjust_array.flags.writeable = False
+
+    def _calculate_phase_shift(self):
+        phase_shift_array = np.fromiter((tx_calc.calculate_susceptance(branch) * (
+                    radians(branch['transformer_phase_shift']) / branch['transformer_tap_ratio'])
+                                         if (branch['branch_type'] == 'transformer')
+                                         else 0.
+                                         for branch in (self._branches[bn] for bn in self.branches_keys)), float,
+                                        count=len(self.branches_keys))
+
+        self.phase_shift_array = phase_shift_array
+
+        ## protect the array using numpy
+        self.phase_shift_array.flags.writeable = False
+
+    def _calculate_losses_phase_shift(self):
+        losses_phase_shift_array = np.fromiter(((tx_calc.calculate_conductance(branch) / branch[
+            'transformer_tap_ratio']) * radians(branch['transformer_phase_shift']) ** 2
+                                                if branch['branch_type'] == 'transformer'
+                                                else 0.
+                                                for branch in (self._branches[bn] for bn in self.branches_keys)), float,
+                                               count=len(self.branches_keys))
+
+        self.losses_phase_shift_array = losses_phase_shift_array
+
+        ## protect the array using numpy
+        self.losses_phase_shift_array.flags.writeable = False
+
+    def get_branch_ldf_iterator(self, branch_name):
+        row_idx = self._branchname_to_index_map[branch_name]
+        ## get the row slice
+        losses_row = self.LDF[row_idx]
+        yield from zip(self.buses_keys, losses_row)
+
+    def get_branch_ldf_abs_max(self, branch_name):
+        row_idx = self._branchname_to_index_map[branch_name]
+        ## get the row slice
+        losses_row = self.LDF[row_idx]
+        return np.abs(losses_row).max()
+
+    def get_branch_ldf_c(self, branch_name):
+        return self.LDF_C[self._branchname_to_index_map[branch_name]]
+
+    def get_branch_losses_phase_shift(self, branch_name):
+        return self.losses_phase_shift_array[self._branchname_to_index_map[branch_name]]
+
+    def get_bus_phi_losses_adj(self, bus_name):
+        return self.phi_losses_adjust_array[self._busname_to_index_map[bus_name]]
+
+    def get_branch_phi_losses_adj(self, branch_name):
+        row_idx = self._branchname_to_index_map[branch_name]
+        ## get the row slice
+        losses_row = self.LDF[row_idx]
+        return losses_row.dot(self.phi_losses_adjust_array)
+
 
 class PTDFLossesMatrix(PTDFMatrix):
 
@@ -192,7 +313,8 @@ class PTDFLossesMatrix(PTDFMatrix):
         self._calculate_losses_phase_shift()
 
     def _calculate_ptdf(self):
-        ptdf_r, ldf, ldf_c = tx_calc.calculate_ptdf_ldf(self._branches,self._buses,self.branches_keys,self.buses_keys,self._reference_bus,self._base_point,\
+        ptdf_r, ldf, ldf_c = tx_calc.calculate_ptdf_ldf(self._branches, self._buses, self.branches_keys,
+                                                        self.buses_keys, self._reference_bus, self._base_point, \
                                                         mapping_bus_to_idx=self._busname_to_index_map)
 
         self.PTDFM = ptdf_r
@@ -205,17 +327,21 @@ class PTDFLossesMatrix(PTDFMatrix):
         self.LDF_C.flags.writeable = False
 
     def _calculate_phi_from_phi_to(self):
-        return tx_calc.calculate_phi_constant(self._branches,self.branches_keys,self.buses_keys,ApproximationType.PTDF_LOSSES, mapping_bus_to_idx=self._busname_to_index_map)
+        return tx_calc.calculate_phi_constant(self._branches, self.branches_keys, self.buses_keys,
+                                              ApproximationType.PTDF_LOSSES,
+                                              mapping_bus_to_idx=self._busname_to_index_map)
 
     def _calculate_phi_loss_constant(self):
-        phi_loss_from, phi_loss_to = tx_calc.calculate_phi_loss_constant(self._branches,self.branches_keys,self.buses_keys,ApproximationType.PTDF_LOSSES, mapping_bus_to_idx=self._busname_to_index_map)
+        phi_loss_from, phi_loss_to = tx_calc.calculate_phi_loss_constant(self._branches, self.branches_keys,
+                                                                         self.buses_keys, ApproximationType.PTDF_LOSSES,
+                                                                         mapping_bus_to_idx=self._busname_to_index_map)
 
         ## hold onto these for line outages
         self._phi_loss_from = phi_loss_from
         self._phi_loss_to = phi_loss_to
 
         ## sum the across the columns, which are indexed by branch
-        phi_losses_adjust_array = phi_loss_from-phi_loss_to
+        phi_losses_adjust_array = phi_loss_from - phi_loss_to
 
         ## sum across the rows to get the total impact, and convert
         ## to dense for fast operations later
@@ -225,11 +351,12 @@ class PTDFLossesMatrix(PTDFMatrix):
         self.phi_losses_adjust_array.flags.writeable = False
 
     def _calculate_phase_shift(self):
-        
-        phase_shift_array = np.fromiter(( tx_calc.calculate_susceptance(branch) * (radians(branch['transformer_phase_shift'])/branch['transformer_tap_ratio']) 
-            if (branch['branch_type'] == 'transformer') 
-            else 0. 
-            for branch in (self._branches[bn] for bn in self.branches_keys)), float, count=len(self.branches_keys))
+        phase_shift_array = np.fromiter((tx_calc.calculate_susceptance(branch) * (
+                    radians(branch['transformer_phase_shift']) / branch['transformer_tap_ratio'])
+                                         if (branch['branch_type'] == 'transformer')
+                                         else 0.
+                                         for branch in (self._branches[bn] for bn in self.branches_keys)), float,
+                                        count=len(self.branches_keys))
 
         self.phase_shift_array = phase_shift_array
 
@@ -237,11 +364,12 @@ class PTDFLossesMatrix(PTDFMatrix):
         self.phase_shift_array.flags.writeable = False
 
     def _calculate_losses_phase_shift(self):
-
-        losses_phase_shift_array = np.fromiter(( (tx_calc.calculate_conductance(branch)/branch['transformer_tap_ratio']) * radians(branch['transformer_phase_shift'])**2 
-            if branch['branch_type'] == 'transformer' 
-            else 0.
-            for branch in (self._branches[bn] for bn in self.branches_keys)), float, count=len(self.branches_keys))
+        losses_phase_shift_array = np.fromiter(((tx_calc.calculate_conductance(branch) / branch[
+            'transformer_tap_ratio']) * radians(branch['transformer_phase_shift']) ** 2
+                                                if branch['branch_type'] == 'transformer'
+                                                else 0.
+                                                for branch in (self._branches[bn] for bn in self.branches_keys)), float,
+                                               count=len(self.branches_keys))
 
         self.losses_phase_shift_array = losses_phase_shift_array
 

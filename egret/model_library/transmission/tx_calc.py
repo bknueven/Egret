@@ -1094,7 +1094,7 @@ def calculate_qtdf_ldf_vdf(branches,buses,index_set_branch,index_set_bus,referen
     QTDF_constant = -QTDF@M + Jc
     VDF_constant = -VDF@M
 
-    return QTDF, LDF, VDF, LDF_constant, QTDF_constant, VDF_constant
+    return QTDF, LDF, VDF, QTDF_constant, LDF_constant, VDF_constant
 
 
 def calculate_adjacency_matrix_transpose(branches,index_set_branch,index_set_bus, mapping_bus_to_idx):
