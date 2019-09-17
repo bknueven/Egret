@@ -870,7 +870,7 @@ def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,b
         _sparse_mapping_branch = {i: branch_n for i, branch_n in enumerate(index_set_branch) if branch_n in sparse_index_set_branch}
 
         ## TODO: Maybe just keep the sparse PTDFs as a dict of ndarrays?
-        ## Right now the return type depends on the options 
+        ## Right now the return type depends on the options
         ## passed in
         for idx, branch_name in _sparse_mapping_branch.items():
             b = np.zeros((_len_branch,1))
@@ -1046,7 +1046,7 @@ def calculate_qtdf_ldf_vdf(branches,buses,index_set_branch,index_set_bus,referen
             SENSI = np.linalg.pinv(M.A,rcond=1e-7)
             pass
         VDF = SENSI
-        PTDF = np.matmul(J.A, SENSI)
+        QTDF = np.matmul(J.A, SENSI)
         LDF = np.matmul(L.A, SENSI)
     elif len(sparse_index_set_branch) < _len_branch or len(sparse_index_set_bus) < _len_bus:
         B_J = np.array([], dtype=np.int64).reshape(_len_bus + 1, 0)
