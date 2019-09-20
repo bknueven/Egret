@@ -364,8 +364,8 @@ def solve_dcopf_losses(model_data,
 
     m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
 
-    m, results, flag = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
-                              symbolic_solver_labels=symbolic_solver_labels,options=options)
+    m, results, solver = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
+                              symbolic_solver_labels=symbolic_solver_labels,options=options, return_solver=True)
 
     # save results data to ModelData object
     gens = dict(md.elements(element_type='generator'))
@@ -417,21 +417,21 @@ def solve_dcopf_losses(model_data,
         return md, results
     return md
 
-# if __name__ == '__main__':
-#     import os
-#     from egret.parsers.matpower_parser import create_ModelData
-#
-#     path = os.path.dirname(__file__)
-#     print(path)
-#     filename = 'pglib_opf_case30_ieee.m'
-#     test_case = os.path.join(path, '../../download/pglib-opf-master/', filename)
-#     md_dict = create_ModelData(test_case)
-#     dcopf_losses_model = create_ptdf_losses_dcopf_model
-#
-#     from egret.models.acopf import solve_acopf
-#
-#     md_dict, _, _ = solve_acopf(md_dict, "ipopt", solver_tee=False, return_model=True, return_results=True)
-#
-#     kwargs = {}
-#     md, results = solve_dcopf_losses(md_dict, "ipopt", dcopf_losses_model_generator=dcopf_losses_model,
-#                                      solver_tee=False, return_results=True, **kwargs)
+if __name__ == '__main__':
+    import os
+    from egret.parsers.matpower_parser import create_ModelData
+
+    path = os.path.dirname(__file__)
+    print(path)
+    filename = 'pglib_opf_case30_ieee.m'
+    test_case = os.path.join(path, '../../download/pglib-opf-master/', filename)
+    md_dict = create_ModelData(test_case)
+    dcopf_losses_model = create_ptdf_losses_dcopf_model
+
+    from egret.models.acopf import solve_acopf
+
+    md_dict, _, _ = solve_acopf(md_dict, "ipopt", solver_tee=False, return_model=True, return_results=True)
+
+    kwargs = {}
+    md, results = solve_dcopf_losses(md_dict, "ipopt", dcopf_losses_model_generator=dcopf_losses_model,
+                                     solver_tee=False, return_results=True, **kwargs)
