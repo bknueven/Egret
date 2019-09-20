@@ -18,10 +18,11 @@ import egret.model_library.transmission.tx_utils as tx_utils
 import egret.model_library.transmission.tx_calc as tx_calc
 import egret.model_library.transmission.bus as libbus
 import egret.model_library.transmission.branch as libbranch
+import egret.model_library.transmission.branch_deprecated as libbranch_deprecated
 import egret.model_library.transmission.gen as libgen
 from egret.model_library.defn import ApproximationType, SensitivityCalculationMethod
 from egret.data.model_data import zip_items
-import egret.data.data_utils as data_utils
+import egret.data.data_utils_deprecated as data_utils_deprecated
 import egret.model_library.decl as decl
 
 
@@ -74,7 +75,7 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
-    data_utils.create_dicts_of_fdf(md,calculation_method=calculation_method)
+    data_utils_deprecated.create_dicts_of_fdf(md)
 
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))
@@ -194,7 +195,7 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
     decl.declare_var('qfl', model=model, index_set=branch_attrs['names'], initialize=qfl_init)#, bounds=qfl_bounds)
 
     ### declare the branch real power flow approximation constraints
-    libbranch.declare_eq_branch_power_ptdf_approx(model=model,
+    libbranch_deprecated.declare_eq_branch_power_ptdf_approx(model=model,
                                                   index_set=branch_attrs['names'],
                                                   branches=branches,
                                                   buses=buses,
@@ -216,15 +217,14 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
                                                   )
 
     ### declare the branch real power loss approximation constraints
-    libbranch.declare_eq_branch_loss_ptdf_approx(model=model,
+    libbranch_deprecated.declare_eq_branch_loss_ptdf_approx(model=model,
                                                   index_set=branch_attrs['names'],
                                                   branches=branches,
                                                   buses=buses,
                                                   bus_p_loads=bus_p_loads,
                                                   gens_by_bus=gens_by_bus,
                                                   bus_gs_fixed_shunts=bus_gs_fixed_shunts,
-                                                  include_constant_term=True,
-                                                  approximation_type=ApproximationType.FDF
+                                                  include_constant_term=True
                                                   )
 
     ### declare the branch reactive power loss approximation constraints
@@ -509,7 +509,7 @@ def _load_solution_to_model_data(m, md, results):
         b_dict['qlmp'] = value(m.dual[m.eq_q_balance])
         for k, k_dict in branches.items():
             if k_dict['from_bus'] == b or k_dict['to_bus'] == b:
-                ptdf = k_dict['ptdf_r']
+                ptdf = k_dict['ptdf']
                 ldf = k_dict['ldf']
                 b_dict['lmp'] += ptdf[b]*value(m.dual[m.eq_pf_branch[k]])
                 b_dict['lmp'] += ldf[b]*value(m.dual[m.eq_pfl_branch[k]])
@@ -576,8 +576,8 @@ def solve_fdf(model_data,
 
     m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
 
-    m, results, flag = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
-                              symbolic_solver_labels=symbolic_solver_labels,options=options)
+    m, results, solver = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
+                              symbolic_solver_labels=symbolic_solver_labels,options=options,return_solver=True)
 
     if not hasattr(md,'results'):
         md.data['results'] = dict()
@@ -586,7 +586,7 @@ def solve_fdf(model_data,
     md.data['results']['#_vars'] = results.Problem[0]['Number of variables']
     md.data['results']['termination'] = results.solver.termination_condition.__str__()
 
-    if flag:
+    if results.Solver.status.key == 'ok':
         _load_solution_to_model_data(m, md, results)
         #m.vm.pprint()
         #m.v_slack_pos.pprint()
@@ -605,12 +605,12 @@ if __name__ == '__main__':
     from egret.parsers.matpower_parser import create_ModelData
 
     path = os.path.dirname(__file__)
-    filename = 'pglib_opf_case2848_rte.m'
+    filename = 'pglib_opf_case14_ieee.m'
     matpower_file = os.path.join(path, '../../download/pglib-opf-master/', filename)
     md = create_ModelData(matpower_file)
     kwargs = {'include_v_feasibility_slack':True}
     from egret.models.acopf import solve_acopf
-    md_ac, m_ac, results = solve_acopf(md, "ipopt", return_model=True,return_results=True,solver_tee=False)
+    md_ac, m_ac, results = solve_acopf(md, "ipopt", return_model=True,return_results=True,solver_tee=True)
     branch_attrs = md_ac.attributes(element_type='branch')
     print('~~~~~~~~~~~ACOPF RESULTS~~~~~~~~~~~')
     m_ac.pg.pprint()
@@ -624,7 +624,6 @@ if __name__ == '__main__':
     print('~~~~~~~~~~~FDF INITIALIZATION~~~~~~~~~~~')
     kwargs = {'include_v_feasibility_slack':False}
     md, m, results = solve_fdf(md_ac, "gurobi", return_model=True,return_results=True,solver_tee=True, **kwargs)
-    exit()
     print('~~~~~~~~~~~FDF RESULTS~~~~~~~~~~~')
     m.pg.pprint()
     m.pf.pprint()
@@ -651,7 +650,7 @@ if __name__ == '__main__':
 
     model, md = create_ccm_model(md_ac)
     from egret.common.solver_interface import _solve_model
-    m, results, flag = _solve_model(model,"ipopt",solver_tee=False)
+    m, results = _solve_model(model,"ipopt",solver_tee=True)
 
     print('~~~~~~~~~~~CCM RESULTS~~~~~~~~~~~')
     m.pf.pprint()

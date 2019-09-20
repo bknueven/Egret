@@ -982,9 +982,9 @@ def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_b
     M2 = AA@Lc
     M = M1 + 0.5 * M2
     LDF_constant = -LDF@M + Lc
-    #PTDF_constant = -PTDF@M + Jc
+    PTDF_constant = -PTDF@M + Jc
 
-    return PTDF, LDF, LDF_constant#, PTDF_constant
+    return PTDF, LDF, LDF_constant, PTDF_constant
 
 
 def calculate_qtdf_ldf_vdf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.SOLUTION,sparse_index_set_branch=None,sparse_index_set_bus=None,mapping_bus_to_idx=None):

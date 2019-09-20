@@ -19,6 +19,7 @@ import egret.model_library.transmission.tx_calc as tx_calc
 from egret.model_library.defn import BasePointType, ApproximationType
 from math import radians
 
+
 def get_ptdf_potentially_from_file(ptdf_options, branches_keys, buses_keys):
     '''
     small loop to get a PTDF matrix previously pickled, 
