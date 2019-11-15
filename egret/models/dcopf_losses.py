@@ -423,15 +423,27 @@ if __name__ == '__main__':
 
     path = os.path.dirname(__file__)
     print(path)
-    filename = 'pglib_opf_case30_ieee.m'
+    filename = 'pglib_opf_case3_lmbd.m'
+    #filename = 'pglib_opf_case5_pjm.m'
+    #filename = 'pglib_opf_case30_ieee.m'
     test_case = os.path.join(path, '../../download/pglib-opf-master/', filename)
     md_dict = create_ModelData(test_case)
     dcopf_losses_model = create_ptdf_losses_dcopf_model
 
     from egret.models.acopf import solve_acopf
 
-    md_dict, _, _ = solve_acopf(md_dict, "ipopt", solver_tee=False, return_model=True, return_results=True)
+    md_dict, _, _ = solve_acopf(md_dict, "ipopt", solver_tee=True, return_model=True, return_results=True)
 
     kwargs = {}
     md, results = solve_dcopf_losses(md_dict, "ipopt", dcopf_losses_model_generator=dcopf_losses_model,
                                      solver_tee=False, return_results=True, **kwargs)
+
+    print('---MD---')
+    print(md)
+    print('---Results---')
+    print('-Problem:')
+    print(results.Problem)
+    print('-Solver:')
+    print(results.Solver)
+    print('-Solution:')
+    print(results.Solution)

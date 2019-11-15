@@ -986,7 +986,8 @@ def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_b
 
     return PTDF, LDF, LDF_constant, PTDF_constant
 
-
+# change sparse_index_set_branch --> active_index_set_branch
+# change sparse_index_set_bus --> active_index_set_bus
 def calculate_qtdf_ldf_vdf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.SOLUTION,sparse_index_set_branch=None,sparse_index_set_bus=None,mapping_bus_to_idx=None):
     """
     Calculates the sensitivity of the voltage magnitude to the reactive power injections and losses on the lines. Includes the

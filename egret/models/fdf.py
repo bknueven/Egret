@@ -14,6 +14,7 @@ This module provides functions that create the modules for typical ACOPF formula
 """
 import pyomo.environ as pe
 from math import inf, pi
+import pandas as pd
 import egret.model_library.transmission.tx_utils as tx_utils
 import egret.model_library.transmission.tx_calc as tx_calc
 import egret.model_library.transmission.bus as libbus
@@ -89,8 +90,7 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
     load_attrs = md.attributes(element_type='load')
     shunt_attrs = md.attributes(element_type='shunt')
 
-    inlet_branches_by_bus, outlet_branches_by_bus = \
-        tx_utils.inlet_outlet_branches_by_bus(branches, buses)
+    inlet_branches_by_bus, outlet_branches_by_bus = tx_utils.inlet_outlet_branches_by_bus(branches, buses)
     gens_by_bus = tx_utils.gens_by_bus(buses, gens)
 
     model = pe.ConcreteModel()
@@ -600,63 +600,122 @@ def solve_fdf(model_data,
         return md, results
     return md
 
+def printresults(results):
+    solver = results.attributes(element_type='Solver')
+
 if __name__ == '__main__':
     import os
     from egret.parsers.matpower_parser import create_ModelData
+    from pyomo.environ import value
 
+    # set case and filepath
     path = os.path.dirname(__file__)
-    filename = 'pglib_opf_case14_ieee.m'
+    filename = 'pglib_opf_case3_lmbd.m'
+    #filename = 'pglib_opf_case500_tamu.m'
     matpower_file = os.path.join(path, '../../download/pglib-opf-master/', filename)
     md = create_ModelData(matpower_file)
+
+    # keyword arguments
     kwargs = {'include_v_feasibility_slack':True}
+
+    # solve ACOPF
     from egret.models.acopf import solve_acopf
-    md_ac, m_ac, results = solve_acopf(md, "ipopt", return_model=True,return_results=True,solver_tee=True)
-    branch_attrs = md_ac.attributes(element_type='branch')
-    print('~~~~~~~~~~~ACOPF RESULTS~~~~~~~~~~~')
-    m_ac.pg.pprint()
-    m_ac.pt.pprint()
-    m_ac.pf.pprint()
-    print('pfl: ', branch_attrs['pfl'])
-    m_ac.qg.pprint()
-    m_ac.qt.pprint()
-    m_ac.qf.pprint()
-    print('qfl: ', branch_attrs['qfl'])
-    print('~~~~~~~~~~~FDF INITIALIZATION~~~~~~~~~~~')
-    kwargs = {'include_v_feasibility_slack':False}
-    md, m, results = solve_fdf(md_ac, "gurobi", return_model=True,return_results=True,solver_tee=True, **kwargs)
-    print('~~~~~~~~~~~FDF RESULTS~~~~~~~~~~~')
-    m.pg.pprint()
-    m.pf.pprint()
-    m.pfl.pprint()
-    m.qg.pprint()
-    m.qf.pprint()
-    m.qfl.pprint()
-    # m_ac.pg.pprint()
-    # m.pg.pprint()
-    # m_ac.pt.pprint()
-    # m_ac.pf.pprint()
-    # m.pf.pprint()
-    # print(branch_attrs['pfl'])
-    # m.pfl.pprint()
-    # m_ac.qg.pprint()
-    # m.qg.pprint()
-    # m_ac.vm.pprint()
-    # m.vm.pprint()
-    # m_ac.qt.pprint()
-    # m_ac.qf.pprint()
-    # m.qf.pprint()
-    # print(branch_attrs['qfl'])
-    # m.qfl.pprint()
+    md_ac, m_ac, results = solve_acopf(md, "ipopt", return_model=True,return_results=True,solver_tee=False)
+    print('ACOPF cost: $%3.2f' % md_ac.data['system']['total_cost'])
+    print(results.Solver)
+    gen = md_ac.attributes(element_type='generator')
+    bus = md_ac.attributes(element_type='bus')
+    branch = md_ac.attributes(element_type='branch')
+    pg_dict = {'acopf' : gen['pg']}
+    qg_dict = {'acopf' : gen['qg']}
+    pt_dict = {'acopf' : branch['pt']}
+    pf_dict = {'acopf' : branch['pf']}
+    pfl_dict = {'acopf' : branch['pfl']}
+    qt_dict = {'acopf' : branch['qt']}
+    qf_dict = {'acopf' : branch['qf']}
+    qfl_dict = {'acopf' : branch['qfl']}
+    va_dict = {'acopf' : bus['va']}
+    vm_dict = {'acopf' : bus['vm']}
 
-    model, md = create_ccm_model(md_ac)
+    # keyword arguments
+    kwargs = {'include_v_feasibility_slack':True}
+
+    # solve FDF
+    md, m, results = solve_fdf(md_ac, "gurobi", return_model=True,return_results=True,solver_tee=False, **kwargs)
+    print('FDF cost: $%3.2f' % md.data['system']['total_cost'])
+    print(results.Solver)
+    gen = md.attributes(element_type='generator')
+    bus = md.attributes(element_type='bus')
+    branch = md.attributes(element_type='branch')
+    pg_dict.update({'fdf' : gen['pg']})
+    qg_dict.update({'fdf' : gen['qg']})
+    pt_dict.update({'fdf' : branch['pt']})
+    pf_dict.update({'fdf' : branch['pf']})
+    pfl_dict.update({'fdf' : branch['pfl']})
+    qt_dict.update({'fdf' : branch['qt']})
+    qf_dict.update({'fdf' : branch['qf']})
+    qfl_dict.update({'fdf' : branch['qfl']})
+    va_dict.update({'fdf' : bus['va']})
+    vm_dict.update({'fdf' : bus['vm']})
+
+    # solve CCM
+    import ccm as ccm
+    model, md = (m_ac,md_ac)
     from egret.common.solver_interface import _solve_model
-    m, results = _solve_model(model,"ipopt",solver_tee=True)
+    m, results = _solve_model(model,"ipopt",solver_tee=False)
+    ccm._load_solution_to_model_data(m, md)
+    print('CCM cost: $%3.2f' % m.obj.expr())
+    print(results.Solver)
+    gen = md.attributes(element_type='generator')
+    bus = md.attributes(element_type='bus')
+    branch = md.attributes(element_type='branch')
+    pg_dict.update({'ccm': gen['pg']})
+    qg_dict.update({'ccm': gen['qg']})
+    pt_dict.update({'ccm': branch['pt']})
+    pf_dict.update({'ccm': branch['pf']})
+    #pfl_dict.update({'ccm': branch['pfl']})
+    qt_dict.update({'ccm': branch['qt']})
+    qf_dict.update({'ccm': branch['qf']})
+    #qfl_dict.update({'ccm': branch['qfl']})
+    va_dict.update({'ccm': bus['va']})
+    vm_dict.update({'ccm': bus['vm']})
 
-    print('~~~~~~~~~~~CCM RESULTS~~~~~~~~~~~')
-    m.pf.pprint()
-    m.pfl.pprint()
-    m.qf.pprint()
-    m.qfl.pprint()
+#    for g in gens['names']:
+#        pg_dict.update({'ccm' : m.pg[g]})
+#        qg_dict.update({'ccm' : m.qg[g]})
+#    for k in branches['names']:
+#        pt_dict.update({'ccm' : m.pt[k]})
+#        pf_dict.update({'ccm' : m.pf[k]})
+#        #pfl_dict.update({'ccm' : m.pfl[k]})
+#        qt_dict.update({'ccm' : m.qt[k]})
+#        qf_dict.update({'ccm' : m.qf[k]})
+#        #qfl_dict.update({'ccm' : m.qfl[k]})
+#    for i in buses['names']:
+#        va_dict.update({'ccm' : m.va[i]})
+#        vm_dict.update({i : value(m.vm[i])})
+
+    # display results in dataframes
+    print('-pg:')
+    print(pd.DataFrame(pg_dict))
+    print('-qg:')
+    print(pd.DataFrame(qg_dict))
+    print('-pt:')
+    print(pd.DataFrame(pt_dict))
+    print('-pf:')
+    print(pd.DataFrame(pf_dict))
+    print('-pfl:')
+    print(pd.DataFrame(pfl_dict))
+    print('-qt:')
+    print(pd.DataFrame(qt_dict))
+    print('-qf:')
+    print(pd.DataFrame(qf_dict))
+    print('-qfl:')
+    print(pd.DataFrame(qfl_dict))
+    print('-va:')
+    print(pd.DataFrame(va_dict))
+    print('-vm:')
+    print(pd.DataFrame(vm_dict))
+
 
 
 # not solving pglib_opf_case57_ieee
