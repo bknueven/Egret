@@ -31,6 +31,7 @@ def declare_eq_branch_power_ptdf_approx(model, index_set, branches, buses, bus_p
 
     con_set = decl.declare_set("_con_eq_branch_power_ptdf_approx_set", model, index_set)
 
+    # formulate constraints expr == shift + ptdf*(bs + pl - pg + phi_from - phi_to) + constant
     m.eq_pf_branch = pe.Constraint(con_set)
     for branch_name in con_set:
         branch = branches[branch_name]
@@ -42,6 +43,7 @@ def declare_eq_branch_power_ptdf_approx(model, index_set, branches, buses, bus_p
             tau = branch['transformer_tap_ratio']
             shift = math.radians(branch['transformer_phase_shift'])
 
+        # Add phase shifter adjustment
         if approximation_type == ApproximationType.PTDF:
             ptdf = branch['ptdf']
             if shift != 0.:
@@ -54,6 +56,7 @@ def declare_eq_branch_power_ptdf_approx(model, index_set, branches, buses, bus_p
                 expr += b * (shift / tau)
 
         for bus_name, coef in ptdf.items():
+            # Ignore buses that do not affect branch
             if ptdf_tol and abs(coef) < ptdf_tol:
                 continue
             bus = buses[bus_name]

@@ -72,7 +72,8 @@ def _include_v_feasibility_slack(model, bus_attrs, penalty=100):
     return v_rhs_kwargs, penalty_expr
 
 
-def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feasibility_slack=False, calculation_method=SensitivityCalculationMethod.INVERT):
+def create_fdf_model(model_data, include_feasibility_slack=True, include_v_feasibility_slack=False, calculation_method=SensitivityCalculationMethod.INVERT):
+    # debugging: set include_feasibility_slack=False when finished
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
@@ -138,7 +139,7 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
     q_neg_bounds = {k: (0, inf) for k in gen_attrs['qg']}
     decl.declare_var('q_neg', model=model, index_set=gen_attrs['names'], bounds=q_neg_bounds)
 
-    ### declare the current flows in the branches
+    ### declare the current flows in the branches #TODO: Why are we calculating currents for FDF initialization? Only need P,Q,V,theta
     vr_init = {k: bus_attrs['vm'][k] * pe.cos(bus_attrs['va'][k]) for k in bus_attrs['vm']}
     vj_init = {k: bus_attrs['vm'][k] * pe.sin(bus_attrs['va'][k]) for k in bus_attrs['vm']}
     s_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
@@ -168,6 +169,7 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
                                          vj_init[to_bus], y_matrix)
         itj_init = tx_calc.calculate_itj(vr_init[from_bus], vj_init[from_bus], vr_init[to_bus],
                                          vj_init[to_bus], y_matrix)
+        #TODO: this calculation seems redundant since line flows should already be in the model
         pf_init[branch_name] = (tx_calc.calculate_p(ifr_init, ifj_init, vr_init[from_bus], vj_init[from_bus])\
                                 -tx_calc.calculate_p(itr_init, itj_init, vr_init[to_bus], vj_init[to_bus]))/2
         pfl_init[branch_name] = (tx_calc.calculate_p(ifr_init, ifj_init, vr_init[from_bus], vj_init[from_bus])\
@@ -202,8 +204,8 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
                                                   bus_p_loads=bus_p_loads,
                                                   gens_by_bus=gens_by_bus,
                                                   bus_gs_fixed_shunts=bus_gs_fixed_shunts,
-                                                  include_constant_term=True,
-                                                  approximation_type=ApproximationType.FDF
+                                                  include_constant_term=True, #True
+                                                  approximation_type=ApproximationType.FDF #FDF
                                                   )
 
     ### declare the branch reactive power flow approximation constraints
@@ -574,6 +576,10 @@ def solve_fdf(model_data,
 
     m, md = fdf_model_generator(model_data, **kwargs)
 
+    # for debugging purposes
+    m.pg.fix()
+    m.qg.fix()
+
     m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
 
     m, results, solver = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
@@ -641,7 +647,7 @@ if __name__ == '__main__':
     kwargs = {'include_v_feasibility_slack':True}
 
     # solve FDF
-    md, m, results = solve_fdf(md_ac, "gurobi", return_model=True,return_results=True,solver_tee=False, **kwargs)
+    md, m, results = gi(md_ac, "gurobi", return_model=True,return_results=True,solver_tee=False, **kwargs)
     print('FDF cost: $%3.2f' % md.data['system']['total_cost'])
     print(results.Solver)
     gen = md.attributes(element_type='generator')
@@ -673,26 +679,12 @@ if __name__ == '__main__':
     qg_dict.update({'ccm': gen['qg']})
     pt_dict.update({'ccm': branch['pt']})
     pf_dict.update({'ccm': branch['pf']})
-    #pfl_dict.update({'ccm': branch['pfl']})
+    pfl_dict.update({'ccm': branch['pfl']})
     qt_dict.update({'ccm': branch['qt']})
     qf_dict.update({'ccm': branch['qf']})
-    #qfl_dict.update({'ccm': branch['qfl']})
+    qfl_dict.update({'ccm': branch['qfl']})
     va_dict.update({'ccm': bus['va']})
     vm_dict.update({'ccm': bus['vm']})
-
-#    for g in gens['names']:
-#        pg_dict.update({'ccm' : m.pg[g]})
-#        qg_dict.update({'ccm' : m.qg[g]})
-#    for k in branches['names']:
-#        pt_dict.update({'ccm' : m.pt[k]})
-#        pf_dict.update({'ccm' : m.pf[k]})
-#        #pfl_dict.update({'ccm' : m.pfl[k]})
-#        qt_dict.update({'ccm' : m.qt[k]})
-#        qf_dict.update({'ccm' : m.qf[k]})
-#        #qfl_dict.update({'ccm' : m.qfl[k]})
-#    for i in buses['names']:
-#        va_dict.update({'ccm' : m.va[i]})
-#        vm_dict.update({i : value(m.vm[i])})
 
     # display results in dataframes
     print('-pg:')

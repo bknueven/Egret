@@ -244,8 +244,10 @@ def _load_solution_to_model_data(m, md):
         if hasattr(m,'pf'):
             k_dict['pf'] = value(m.pf[k])
             k_dict['qf'] = value(m.qf[k])
-            #k_dict['pfl'] = value(m.pfl[k])
-            #k_dict['qfl'] = value(m.qfl[k])
+            k_dict['pt'] = value(m.pt[k])
+            k_dict['qt'] = value(m.qt[k])
+            k_dict['pfl'] = value(m.pf[k]) + value(m.pt[k])
+            k_dict['qfl'] = value(m.qf[k]) + value(m.qt[k])
 
     unscale_ModelData_to_pu(md, inplace=True)
 
