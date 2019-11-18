@@ -87,6 +87,7 @@ def create_fixed_fdf_model(model_data, **kwargs):
 
     return model, md
 
+
 def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feasibility_slack=False, calculation_method=SensitivityCalculationMethod.INVERT):
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
@@ -388,7 +389,7 @@ def create_ccm_model(model_data, include_feasibility_slack=False, include_v_feas
     q_neg_bounds = {k: (0, inf) for k in gen_attrs['qg']}
     decl.declare_var('q_neg', model=model, index_set=gen_attrs['names'], bounds=q_neg_bounds)
 
-    ### declare the current flows in the branches
+    ### declare the current flows in the branches #TODO: Why are the currents being calculated??
     vr_init = {k: bus_attrs['vm'][k] * pe.cos(bus_attrs['va'][k]) for k in bus_attrs['vm']}
     vj_init = {k: bus_attrs['vm'][k] * pe.sin(bus_attrs['va'][k]) for k in bus_attrs['vm']}
     s_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
@@ -450,7 +451,7 @@ def create_ccm_model(model_data, include_feasibility_slack=False, include_v_feas
                                                branches=branches
                                               )
 
-    ### declare the p balance
+    ### declare real power balance constraint
     libbus.declare_eq_p_balance_ccm_approx(model=model,
                                            index_set=bus_attrs['names'],
                                            buses=buses,
@@ -462,7 +463,7 @@ def create_ccm_model(model_data, include_feasibility_slack=False, include_v_feas
                                            **p_rhs_kwargs
                                            )
 
-    ### declare the q balance
+    ### declare reactive power balance constraint
     libbus.declare_eq_q_balance_ccm_approx(model=model,
                                            index_set=bus_attrs['names'],
                                            buses=buses,
@@ -661,7 +662,7 @@ if __name__ == '__main__':
     kwargs = {}
     #kwargs = {'include_v_feasibility_slack':True,'include_feasibility_slack':True}
 
-    # solve FDF
+    # solve (fixed) FDF
     md, m, results = solve_fdf(md_ac, "gurobi", fdf_model_generator=create_fixed_fdf_model, return_model=True,return_results=True,solver_tee=False, **kwargs)
     print('FDF cost: $%3.2f' % md.data['system']['total_cost'])
     print(results.Solver)
@@ -681,15 +682,17 @@ if __name__ == '__main__':
 
     # solve CCM
     import ccm as ccm
-    model, md = (m_ac,md_ac)
-    from egret.common.solver_interface import _solve_model
-    m, results = _solve_model(model,"ipopt",solver_tee=False)
-    ccm._load_solution_to_model_data(m, md)
-    print('CCM cost: $%3.2f' % m.obj.expr())
-    print(results.Solver)
-    gen = md.attributes(element_type='generator')
-    bus = md.attributes(element_type='bus')
-    branch = md.attributes(element_type='branch')
+    #ccm_model_generator=create_fixed_ccm_model to fix generator variables
+    m_ccm, md_ccm, results_ccm = ccm.solve_ccm(md_ac, "ipopt", return_model=True,return_results=True,solver_tee=False, **kwargs)
+#    model,md = ccm.create_ccm_model(md_ac)
+#    from egret.common.solver_interface import _solve_model
+#    m, results = _solve_model(model,"ipopt",solver_tee=False)
+#    ccm._load_solution_to_model_data(m, md)
+    print('CCM cost: $%3.2f' % m_ccm.obj.expr())
+    print(results_ccm.Solver)
+    gen = md_ccm.attributes(element_type='generator')
+    bus = md_cmm.attributes(element_type='bus')
+    branch = md_ccm.attributes(element_type='branch')
     pg_dict.update({'ccm': gen['pg']})
     qg_dict.update({'ccm': gen['qg']})
     pt_dict.update({'ccm': branch['pt']})

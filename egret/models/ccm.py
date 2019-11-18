@@ -24,6 +24,23 @@ from egret.data.model_data import zip_items
 import egret.model_library.decl as decl
 
 
+
+def create_fixed_ccm_model(model_data, **kwargs):
+    ## creates a CCM model with fixed m.pg and m.qg, and relaxed power balance
+
+    model, md = create_ccm_model(model_data, include_feasibility_slack=True, include_v_feasibility_slack=True, **kwargs)
+
+    for g, pg in model.pg.items():
+        pg.value = value(m_ac.pg[g])
+    for g, qg in model.qg.items():
+        qg.value = value(m_ac.qg[g])
+
+    model.pg.fix()
+    model.qg.fix()
+
+    return model, md
+
+
 def create_ccm_model(model_data, include_feasibility_slack=False, include_v_feasibility_slack=False, calculation_method=SensitivityCalculationMethod.INVERT):
     ''' convex combination midpoint (ccm) model '''
     md = model_data.clone_in_service()
@@ -213,7 +230,82 @@ def create_ccm_model(model_data, include_feasibility_slack=False, include_v_feas
     return model, md
 
 
-def _load_solution_to_model_data(m, md):
+def solve_ccm(model_data,
+                solver,
+                timelimit = None,
+                solver_tee = True,
+                symbolic_solver_labels = False,
+                options = None,
+                ccm_model_generator = create_ccm_model,
+                return_model = False,
+                return_results = False,
+                **kwargs):
+    '''
+    Create and solve a new "convex combination midpoint" model
+
+    Parameters
+    ----------
+    model_data : egret.data.ModelData
+        An egret ModelData object with the appropriate data loaded.
+    solver : str or pyomo.opt.base.solvers.OptSolver
+        Either a string specifying a pyomo solver name, or an instantiated pyomo solver
+    timelimit : float (optional)
+        Time limit for dcopf run. Default of None results in no time
+        limit being set.
+    solver_tee : bool (optional)
+        Display solver log. Default is True.
+    symbolic_solver_labels : bool (optional)
+        Use symbolic solver labels. Useful for debugging; default is False.
+    options : dict (optional)
+        Other options to pass into the solver. Default is dict().
+    ccm_model_generator : function (optional)
+        Function for generating the fdf model. Default is
+        egret.models.ccm.create_ccm_model
+    return_model : bool (optional)
+        If True, returns the pyomo model object
+    return_results : bool (optional)
+        If True, returns the pyomo results object
+    kwargs : dictionary (optional)
+        Additional arguments for building model
+    '''
+
+    import pyomo.environ as pe
+    from egret.common.solver_interface import _solve_model
+
+    m, md = ccm_model_generator(model_data, **kwargs)
+
+    # for debugging purposes
+    #m.pg.fix()
+    #m.qg.fix()
+
+    m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
+
+    m, results, solver = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
+                              symbolic_solver_labels=symbolic_solver_labels,options=options,return_solver=True)
+
+    if not hasattr(md,'results'):
+        md.data['results'] = dict()
+    md.data['results']['time'] = results.Solver.Time
+    md.data['results']['#_cons'] = results.Problem[0]['Number of constraints']
+    md.data['results']['#_vars'] = results.Problem[0]['Number of variables']
+    md.data['results']['termination'] = results.solver.termination_condition.__str__()
+
+    if results.Solver.status.key == 'ok':
+        _load_solution_to_model_data(m, md, results)
+        #m.vm.pprint()
+        #m.v_slack_pos.pprint()
+        #m.v_slack_neg.pprint()
+
+    if return_model and return_results:
+        return md, m, results
+    elif return_model:
+        return md, m
+    elif return_results:
+        return md, results
+    return md
+
+
+def _load_solution_to_model_data(m, md,results):
     from pyomo.environ import value
     from egret.model_library.transmission.tx_utils import unscale_ModelData_to_pu
 
@@ -244,11 +336,15 @@ def _load_solution_to_model_data(m, md):
         if hasattr(m,'pf'):
             k_dict['pf'] = value(m.pf[k])
             k_dict['qf'] = value(m.qf[k])
-            k_dict['pt'] = value(m.pt[k])
-            k_dict['qt'] = value(m.qt[k])
-            k_dict['pfl'] = value(m.pf[k]) + value(m.pt[k])
-            k_dict['qfl'] = value(m.qf[k]) + value(m.qt[k])
+#            k_dict['pt'] = value(m.pt[k])
+#            k_dict['qt'] = value(m.qt[k])
+        k_dict['pfl'] = value(m.pfl[k])
+        k_dict['qfl'] = value(m.qfl[k])
 
     unscale_ModelData_to_pu(md, inplace=True)
 
     return
+
+
+if __name__ == '__main__':
+    pass
