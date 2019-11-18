@@ -72,8 +72,22 @@ def _include_v_feasibility_slack(model, bus_attrs, penalty=100):
     return v_rhs_kwargs, penalty_expr
 
 
-def create_fdf_model(model_data, include_feasibility_slack=True, include_v_feasibility_slack=False, calculation_method=SensitivityCalculationMethod.INVERT):
-    # debugging: set include_feasibility_slack=False when finished
+def create_fixed_fdf_model(model_data, **kwargs):
+    ## creates an FDF model with fixed m.pg and m.qg, and relaxed power balance
+
+    model, md = create_fdf_model(model_data, include_feasibility_slack=True, include_v_feasibility_slack=True, **kwargs)
+
+    for g, pg in model.pg.items():
+        pg.value = value(m_ac.pg[g])
+    for g, qg in model.qg.items():
+        qg.value = value(m_ac.qg[g])
+
+    model.pg.fix()
+    model.qg.fix()
+
+    return model, md
+
+def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feasibility_slack=False, calculation_method=SensitivityCalculationMethod.INVERT):
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
@@ -577,8 +591,8 @@ def solve_fdf(model_data,
     m, md = fdf_model_generator(model_data, **kwargs)
 
     # for debugging purposes
-    m.pg.fix()
-    m.qg.fix()
+    #m.pg.fix()
+    #m.qg.fix()
 
     m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
 
@@ -644,10 +658,11 @@ if __name__ == '__main__':
     vm_dict = {'acopf' : bus['vm']}
 
     # keyword arguments
-    kwargs = {'include_v_feasibility_slack':True}
+    kwargs = {}
+    #kwargs = {'include_v_feasibility_slack':True,'include_feasibility_slack':True}
 
     # solve FDF
-    md, m, results = gi(md_ac, "gurobi", return_model=True,return_results=True,solver_tee=False, **kwargs)
+    md, m, results = solve_fdf(md_ac, "gurobi", fdf_model_generator=create_fixed_fdf_model, return_model=True,return_results=True,solver_tee=False, **kwargs)
     print('FDF cost: $%3.2f' % md.data['system']['total_cost'])
     print(results.Solver)
     gen = md.attributes(element_type='generator')

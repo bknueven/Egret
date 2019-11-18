@@ -202,8 +202,7 @@ def declare_eq_p_balance_ed(model, index_set, bus_p_loads, gens_by_bus, bus_gs_f
 
 def declare_eq_p_balance_fdf(model, index_set, buses, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts, **rhs_kwargs):
     """
-    Create the equality constraints for the real power balance
-    at a bus using the variables for real power flows, respectively.
+    Create the equality constraints for the SYSTEM real power balance
 
     NOTE: Equation build orientates constants to the RHS in order to compute the correct dual variable sign
     """
@@ -228,8 +227,7 @@ def declare_eq_p_balance_fdf(model, index_set, buses, bus_p_loads, gens_by_bus, 
 
 def declare_eq_q_balance_fdf(model, index_set, buses, bus_q_loads, gens_by_bus, bus_bs_fixed_shunts, **rhs_kwargs):
     """
-    Create the equality constraints for the reactive power balance
-    at a bus using the variables for real power flows, respectively.
+    Create the equality constraints for the SYSTEM reactive power balance
 
     NOTE: Equation build orientates constants to the RHS in order to compute the correct dual variable sign
     """
