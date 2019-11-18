@@ -24,16 +24,61 @@ from egret.data.model_data import zip_items
 import egret.model_library.decl as decl
 
 
+def _include_system_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, bus_q_loads, penalty=1000):
+    import egret.model_library.decl as decl
+    slack_init = 0
+    slack_bounds = (0, sum(bus_p_loads.values()))
+    decl.declare_var('p_slack_pos', model=model, index_set=bus_attrs["names"],
+                     initialize=slack_init, bounds=slack_bounds
+                     )
+    decl.declare_var('p_slack_neg', model=model, index_set=bus_attrs["names"],
+                     initialize=slack_init, bounds=slack_bounds
+                     )
+    slack_bounds = (0, sum(bus_q_loads.values()))
+    decl.declare_var('q_slack_pos', model=model, index_set=bus_attrs["names"],
+                     initialize=slack_init, bounds=slack_bounds
+                     )
+    decl.declare_var('q_slack_neg', model=model, index_set=bus_attrs["names"],
+                     initialize=slack_init, bounds=slack_bounds
+                     )
+    p_rhs_kwargs = {'include_feasibility_slack_pos': 'p_slack_pos', 'include_feasibility_slack_neg': 'p_slack_neg'}
+    q_rhs_kwargs = {'include_feasibility_slack_pos': 'q_slack_pos', 'include_feasibility_slack_neg': 'q_slack_neg'}
 
-def create_fixed_ccm_model(model_data, **kwargs):
+    p_penalty = penalty * (max([gen_attrs['p_cost'][k]['values'][1] for k in gen_attrs['names']]) + 1)
+    q_penalty = penalty * (max(gen_attrs.get('q_cost', gen_attrs['p_cost'])[k]['values'][1] for k in gen_attrs['names']) + 1)
+
+    penalty_expr = p_penalty * (sum(model.p_slack_pos[k] + model.p_slack_neg[k] for k in bus_attrs["names"])) \
+        + q_penalty * (sum(model.q_slack_pos[k] + model.q_slack_neg[k] for k in bus_attrs["names"]))
+
+    return p_rhs_kwargs, q_rhs_kwargs, penalty_expr
+
+
+def _include_v_feasibility_slack(model, bus_attrs, penalty=100):
+    import egret.model_library.decl as decl
+    slack_init = {k: 0 for k in bus_attrs['names']}
+    slack_bounds = {k: (0,inf) for k in bus_attrs['names']}
+    decl.declare_var('v_slack_pos', model=model, index_set=bus_attrs["names"],
+                     initialize=slack_init, bounds=slack_bounds
+                     )
+    decl.declare_var('v_slack_neg', model=model, index_set=bus_attrs["names"],
+                     initialize=slack_init, bounds=slack_bounds
+                     )
+    v_rhs_kwargs = {'include_feasibility_slack_pos': 'v_slack_pos', 'include_feasibility_slack_neg': 'v_slack_neg'}
+
+    penalty_expr = penalty * (sum(model.v_slack_pos[k] + model.v_slack_neg[k] for k in bus_attrs["names"]))
+
+    return v_rhs_kwargs, penalty_expr
+
+
+def create_fixed_ccm_model(model_data, solved_model, **kwargs):
     ## creates a CCM model with fixed m.pg and m.qg, and relaxed power balance
 
     model, md = create_ccm_model(model_data, include_feasibility_slack=True, include_v_feasibility_slack=True, **kwargs)
 
     for g, pg in model.pg.items():
-        pg.value = value(m_ac.pg[g])
+        pg.value = value(solved_model.pg[g])
     for g, qg in model.qg.items():
-        qg.value = value(m_ac.qg[g])
+        qg.value = value(solved_model.qg[g])
 
     model.pg.fix()
     model.qg.fix()
@@ -94,7 +139,7 @@ def create_ccm_model(model_data, include_feasibility_slack=False, include_v_feas
     p_rhs_kwargs = {}
     q_rhs_kwargs = {}
     if include_feasibility_slack:
-        p_rhs_kwargs, q_rhs_kwargs, penalty_expr = _include_system_feasibility_slack(model, gen_attrs, bus_p_loads, bus_q_loads)
+        p_rhs_kwargs, q_rhs_kwargs, penalty_expr = _include_system_feasibility_slack(model,bus_attrs, gen_attrs, bus_p_loads, bus_q_loads)
 
     v_rhs_kwargs = {}
     if include_v_feasibility_slack:

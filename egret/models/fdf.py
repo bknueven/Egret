@@ -683,7 +683,7 @@ if __name__ == '__main__':
     # solve CCM
     import ccm as ccm
     #ccm_model_generator=create_fixed_ccm_model to fix generator variables
-    m_ccm, md_ccm, results_ccm = ccm.solve_ccm(md_ac, "ipopt", return_model=True,return_results=True,solver_tee=False, **kwargs)
+    md_ccm, m_ccm, results_ccm = ccm.solve_ccm(md_ac, "ipopt",ccm_model_generator=ccm.create_fixed_ccm_model(md_ac,m_ac), return_model=True,return_results=True,solver_tee=False, **kwargs)
 #    model,md = ccm.create_ccm_model(md_ac)
 #    from egret.common.solver_interface import _solve_model
 #    m, results = _solve_model(model,"ipopt",solver_tee=False)
@@ -691,7 +691,7 @@ if __name__ == '__main__':
     print('CCM cost: $%3.2f' % m_ccm.obj.expr())
     print(results_ccm.Solver)
     gen = md_ccm.attributes(element_type='generator')
-    bus = md_cmm.attributes(element_type='bus')
+    bus = md_ccm.attributes(element_type='bus')
     branch = md_ccm.attributes(element_type='branch')
     pg_dict.update({'ccm': gen['pg']})
     qg_dict.update({'ccm': gen['qg']})
