@@ -209,7 +209,11 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
                              initialize=qf_init)#,
 #                             bounds=qf_bounds
 #                             )
-    decl.declare_var('qfl', model=model, index_set=branch_attrs['names'], initialize=qfl_init)#, bounds=qfl_bounds)
+    libbranch.declare_var_qfl(model=model,
+                              index_set=branch_attrs['names'],
+                              initialize=qfl_init)  # ,
+#                              bounds=qfl_bounds
+#                              )
 
     ### declare the branch real power flow approximation constraints
     libbranch_deprecated.declare_eq_branch_power_ptdf_approx(model=model,
@@ -658,38 +662,22 @@ if __name__ == '__main__':
     va_dict = {'acopf' : bus['va']}
     vm_dict = {'acopf' : bus['vm']}
 
-    # keyword arguments
-    kwargs = {}
-    #kwargs = {'include_v_feasibility_slack':True,'include_feasibility_slack':True}
-
-    # solve (fixed) FDF
-    md, m, results = solve_fdf(md_ac, "gurobi", fdf_model_generator=create_fixed_fdf_model, return_model=True,return_results=True,solver_tee=False, **kwargs)
-    print('FDF cost: $%3.2f' % md.data['system']['total_cost'])
-    print(results.Solver)
-    gen = md.attributes(element_type='generator')
-    bus = md.attributes(element_type='bus')
-    branch = md.attributes(element_type='branch')
-    pg_dict.update({'fdf' : gen['pg']})
-    qg_dict.update({'fdf' : gen['qg']})
-    pt_dict.update({'fdf' : branch['pt']})
-    pf_dict.update({'fdf' : branch['pf']})
-    pfl_dict.update({'fdf' : branch['pfl']})
-    qt_dict.update({'fdf' : branch['qt']})
-    qf_dict.update({'fdf' : branch['qf']})
-    qfl_dict.update({'fdf' : branch['qfl']})
-    va_dict.update({'fdf' : bus['va']})
-    vm_dict.update({'fdf' : bus['vm']})
-
     # solve CCM
+    kwargs={'solved_model':m_ac}
     import ccm as ccm
     #ccm_model_generator=create_fixed_ccm_model to fix generator variables
-    md_ccm, m_ccm, results_ccm = ccm.solve_ccm(md_ac, "ipopt",ccm_model_generator=ccm.create_fixed_ccm_model(md_ac,m_ac), return_model=True,return_results=True,solver_tee=False, **kwargs)
+    md_ccm, m_ccm, results_ccm = ccm.solve_ccm(md_ac, "ipopt",ccm_model_generator=ccm.create_fixed_ccm_model, return_model=True,return_results=True,solver_tee=False, **kwargs)
 #    model,md = ccm.create_ccm_model(md_ac)
 #    from egret.common.solver_interface import _solve_model
 #    m, results = _solve_model(model,"ipopt",solver_tee=False)
 #    ccm._load_solution_to_model_data(m, md)
     print('CCM cost: $%3.2f' % m_ccm.obj.expr())
     print(results_ccm.Solver)
+    bus_attrs = md_ccm.attributes(element_type='bus')
+    if sum(value(m_ccm.p_slack_pos[b] + m_ccm.p_slack_neg[b]) for b in bus_attrs['names']) > 1e-6:
+        print('REAL POWER IMBALANCE')
+    if sum(value(m_ccm.q_slack_pos[b] + m_ccm.q_slack_neg[b]) for b in bus_attrs['names']) > 1e-6:
+        print('REACTIVE POWER IMBALANCE')
     gen = md_ccm.attributes(element_type='generator')
     bus = md_ccm.attributes(element_type='bus')
     branch = md_ccm.attributes(element_type='branch')
@@ -703,6 +691,32 @@ if __name__ == '__main__':
     qfl_dict.update({'ccm': branch['qfl']})
     va_dict.update({'ccm': bus['va']})
     vm_dict.update({'ccm': bus['vm']})
+
+    # keyword arguments
+    kwargs = {}
+    #kwargs = {'include_v_feasibility_slack':True,'include_feasibility_slack':True}
+
+    # solve (fixed) FDF
+    md, m, results = solve_fdf(md_ac, "gurobi", fdf_model_generator=create_fixed_fdf_model, return_model=True,return_results=True,solver_tee=False, **kwargs)
+    print('FDF cost: $%3.2f' % md.data['system']['total_cost'])
+    print(results.Solver)
+    if value(m.p_slack_pos+m.p_slack_neg)>1e-6:
+        print('REAL POWER IMBALANCE')
+    if value(m.q_slack_pos+m.q_slack_neg)>1e-6:
+        print('REACTIVE POWER IMBALANCE')
+    gen = md.attributes(element_type='generator')
+    bus = md.attributes(element_type='bus')
+    branch = md.attributes(element_type='branch')
+    pg_dict.update({'fdf' : gen['pg']})
+    qg_dict.update({'fdf' : gen['qg']})
+    pt_dict.update({'fdf' : branch['pt']})
+    pf_dict.update({'fdf' : branch['pf']})
+    pfl_dict.update({'fdf' : branch['pfl']})
+    qt_dict.update({'fdf' : branch['qt']})
+    qf_dict.update({'fdf' : branch['qf']})
+    qfl_dict.update({'fdf' : branch['qfl']})
+    va_dict.update({'fdf' : bus['va']})
+    vm_dict.update({'fdf' : bus['vm']})
 
     # display results in dataframes
     print('-pg:')

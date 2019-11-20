@@ -76,12 +76,15 @@ def create_fixed_ccm_model(model_data, solved_model, **kwargs):
     model, md = create_ccm_model(model_data, include_feasibility_slack=True, include_v_feasibility_slack=True, **kwargs)
 
     for g, pg in model.pg.items():
-        pg.value = value(solved_model.pg[g])
+        pg.value = pe.value(solved_model.pg[g])
     for g, qg in model.qg.items():
-        qg.value = value(solved_model.qg[g])
+        qg.value = pe.value(solved_model.qg[g])
+    for b,vm in model.vm.items():
+        vm.value = pe.value(solved_model.vm[b])
 
     model.pg.fix()
     model.qg.fix()
+    model.vm.fix()
 
     return model, md
 
@@ -216,7 +219,11 @@ def create_ccm_model(model_data, include_feasibility_slack=False, include_v_feas
                              initialize=qf_init)#,
 #                             bounds=qf_bounds
 #                             )
-    decl.declare_var('qfl', model=model, index_set=branch_attrs['names'], initialize=qfl_init)#, bounds=qfl_bounds)
+    libbranch.declare_var_qfl(model=model,
+                             index_set=branch_attrs['names'],
+                             initialize=qfl_init)#,
+#                             bounds=qfl_bounds
+#                             )
 
     ### declare the midpoint power approximation constraints
     libbranch.declare_eq_branch_midpoint_power(model=model,

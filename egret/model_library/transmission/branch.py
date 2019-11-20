@@ -73,6 +73,13 @@ def declare_var_qt(model, index_set, **kwargs):
     """
     decl.declare_var('qt', model=model, index_set=index_set, **kwargs)
 
+def declare_var_qfl(model, index_set, **kwargs):
+    """
+    Create variable for the reactive part of the power loss in the transmission
+    line
+    """
+    decl.declare_var('qfl', model=model, index_set=index_set, **kwargs)
+
 
 def declare_var_ifr(model, index_set, **kwargs):
     """
@@ -384,7 +391,7 @@ def get_power_flow_expr_ptdf_approx(model, branch_name, PTDF, rel_ptdf_tol=None,
     ptdf_tol = max(abs_ptdf_tol, rel_ptdf_tol*max_coef) 
     ## NOTE: It would be easy to hold on to the 'ptdf' dictionary here,
     ##       if we wanted to
-    m_p_nw = model.p_nw
+    m_p_nw = model.p_nw #TODO: What is p_nw?
     ## if model.p_nw is Var, we can use LinearExpression
     ## to build these dense constraints much faster
     if isinstance(m_p_nw, pe.Var):
