@@ -93,6 +93,9 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
     data_utils_deprecated.create_dicts_of_fdf(md)
+    # TO BE DELETED: below and other functions called in create_dicts... method above
+    #calculate_ptdf_ldf(branches, buses, index_set_branch, index_set_bus, reference_bus,
+    #                   base_point=BasePointType.SOLUTION, sparse_index_set_branch=None, mapping_bus_to_idx=None)
 
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))
@@ -531,11 +534,11 @@ def _load_solution_to_model_data(m, md, results):
         for k, k_dict in branches.items():
             if k_dict['from_bus'] == b or k_dict['to_bus'] == b:
                 ptdf = k_dict['ptdf']
-                ldf = k_dict['ldf']
+                pldf = k_dict['pldf']
                 b_dict['lmp'] += ptdf[b]*value(m.dual[m.eq_pf_branch[k]])
-                b_dict['lmp'] += ldf[b]*value(m.dual[m.eq_pfl_branch[k]])
+                b_dict['lmp'] += pldf[b]*value(m.dual[m.eq_pfl_branch[k]])
 
-                qtdf = k_dict['qtdf_r']
+                qtdf = k_dict['qtdf']
                 qldf = k_dict['qldf']
                 b_dict['qlmp'] += qtdf[b]*value(m.dual[m.eq_qf_branch[k]])
                 b_dict['qlmp'] += qldf[b]*value(m.dual[m.eq_qfl_branch[k]])
@@ -636,6 +639,7 @@ if __name__ == '__main__':
     # set case and filepath
     path = os.path.dirname(__file__)
     filename = 'pglib_opf_case3_lmbd.m'
+    #filename = 'pglib_opf_case5_pjm.m'
     #filename = 'pglib_opf_case500_tamu.m'
     matpower_file = os.path.join(path, '../../download/pglib-opf-master/', filename)
     md = create_ModelData(matpower_file)
@@ -719,18 +723,18 @@ if __name__ == '__main__':
     vm_dict.update({'fdf' : bus['vm']})
 
     # display results in dataframes
-    print('-pg:')
-    print(pd.DataFrame(pg_dict))
-    print('-qg:')
-    print(pd.DataFrame(qg_dict))
-    print('-pt:')
-    print(pd.DataFrame(pt_dict))
+#    print('-pg:')
+#    print(pd.DataFrame(pg_dict))
+#    print('-qg:')
+#    print(pd.DataFrame(qg_dict))
+#    print('-pt:')
+#    print(pd.DataFrame(pt_dict))
     print('-pf:')
     print(pd.DataFrame(pf_dict))
     print('-pfl:')
     print(pd.DataFrame(pfl_dict))
-    print('-qt:')
-    print(pd.DataFrame(qt_dict))
+#    print('-qt:')
+#    print(pd.DataFrame(qt_dict))
     print('-qf:')
     print(pd.DataFrame(qf_dict))
     print('-qfl:')

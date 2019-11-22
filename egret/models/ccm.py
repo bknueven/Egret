@@ -225,7 +225,7 @@ def create_ccm_model(model_data, include_feasibility_slack=False, include_v_feas
 #                             bounds=qfl_bounds
 #                             )
 
-    ### declare the midpoint power approximation constraints
+    ### declare the midpoint power approximation constraints (real/reactive power flow and losses)
     libbranch.declare_eq_branch_midpoint_power(model=model,
                                                index_set=branch_attrs['names'],
                                                branches=branches

@@ -886,10 +886,13 @@ def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,b
     return PTDF
 
 
-def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.SOLUTION,sparse_index_set_branch=None,mapping_bus_to_idx=None):
+def calculate_ptdf_pldf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.SOLUTION,sparse_index_set_branch=None,mapping_bus_to_idx=None):
     """
-    Calculates the sensitivity of the voltage angle to real power injections and losses on the lines. Includes the
-    calculation of the constant term for the quadratic losses on the lines.
+    Calculates the following:
+        PTDF:   real power transfer distribution factor
+        PT_C:   real power transfer constant
+        PLDF:   real power losses distribution factor
+        PL_C:   real power losses constant
     Parameters
     ----------
     branches: dict{}
@@ -951,7 +954,7 @@ def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_b
         SENSI = SENSI[:-1,:-1]
 
         PTDF = np.matmul(J.A, SENSI)
-        LDF = np.matmul(L.A, SENSI)
+        PLDF = np.matmul(L.A, SENSI)
     elif len(sparse_index_set_branch) < _len_branch:
         B_J = np.array([], dtype=np.int64).reshape(_len_bus + 1, 0)
         B_L = np.array([], dtype=np.int64).reshape(_len_bus + 1, 0)
@@ -974,21 +977,21 @@ def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_b
         _ptdf = sp.sparse.linalg.spsolve(J0.transpose().tocsr(), B_J).T
         PTDF[row_idx] = _ptdf[:, :-1]
 
-        LDF = sp.sparse.lil_matrix((_len_branch, _len_bus))
-        _ldf = sp.sparselinalg.spsolve(J0.transpose().tocsr(), B_L).T
-        LDF[row_idx] = _ldf[:, :-1]
+        PLDF = sp.sparse.lil_matrix((_len_branch, _len_bus))
+        _pldf = sp.sparselinalg.spsolve(J0.transpose().tocsr(), B_L).T
+        PLDF[row_idx] = _pldf[:, :-1]
 
     M1 = A@Jc
     M2 = AA@Lc
     M = M1 + 0.5 * M2
-    LDF_constant = -LDF@M + Lc
-    PTDF_constant = -PTDF@M + Jc
+    PT_constant = -PTDF@M + Jc
+    PL_constant = -PLDF@M + Lc
 
-    return PTDF, LDF, LDF_constant, PTDF_constant
+    return PTDF, PT_constant, PLDF, PL_constant
 
 # change sparse_index_set_branch --> active_index_set_branch
 # change sparse_index_set_bus --> active_index_set_bus
-def calculate_qtdf_ldf_vdf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.SOLUTION,sparse_index_set_branch=None,sparse_index_set_bus=None,mapping_bus_to_idx=None):
+def calculate_qtdf_qldf_vdf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.SOLUTION,sparse_index_set_branch=None,sparse_index_set_bus=None,mapping_bus_to_idx=None):
     """
     Calculates the sensitivity of the voltage magnitude to the reactive power injections and losses on the lines. Includes the
     calculation of the constant term for the quadratic losses on the lines.
@@ -1048,7 +1051,7 @@ def calculate_qtdf_ldf_vdf(branches,buses,index_set_branch,index_set_bus,referen
             pass
         VDF = SENSI
         QTDF = np.matmul(J.A, SENSI)
-        LDF = np.matmul(L.A, SENSI)
+        QLDF = np.matmul(L.A, SENSI)
     elif len(sparse_index_set_branch) < _len_branch or len(sparse_index_set_bus) < _len_bus:
         B_J = np.array([], dtype=np.int64).reshape(_len_bus + 1, 0)
         B_L = np.array([], dtype=np.int64).reshape(_len_bus + 1, 0)
@@ -1071,9 +1074,9 @@ def calculate_qtdf_ldf_vdf(branches,buses,index_set_branch,index_set_bus,referen
         _qtdf = sp.sparse.linalg.spsolve(M.transpose().tocsr(), B_J).T
         QTDF[row_idx] = _qtdf[:, :-1]
 
-        LDF = sp.sparse.lil_matrix((_len_branch, _len_bus))
-        _ldf = sp.sparselinalg.spsolve(M.transpose().tocsr(), B_L).T
-        LDF[row_idx] = _ldf[:, :-1]
+        QLDF = sp.sparse.lil_matrix((_len_branch, _len_bus))
+        _qldf = sp.sparselinalg.spsolve(M.transpose().tocsr(), B_L).T
+        QLDF[row_idx] = _qldf[:, :-1]
 
         Bb = np.array([], dtype=np.int64).reshape(_len_bus + 1, 0)
         _sparse_mapping_bus = {i: bus_n for i, bus_n in enumerate(index_set_bus) if bus_n in sparse_index_set_bus}
@@ -1091,11 +1094,11 @@ def calculate_qtdf_ldf_vdf(branches,buses,index_set_branch,index_set_bus,referen
     M1 = A@Jc
     M2 = AA@Lc
     M = M1 - 0.5 * M2
-    LDF_constant = -LDF@M + Lc
+    QLDF_constant = -QLDF@M + Lc
     QTDF_constant = -QTDF@M + Jc
     VDF_constant = -VDF@M
 
-    return QTDF, LDF, VDF, QTDF_constant, LDF_constant, VDF_constant
+    return QTDF, QTDF_constant, QLDF, QLDF_constant, VDF, VDF_constant
 
 
 def calculate_adjacency_matrix_transpose(branches,index_set_branch,index_set_bus, mapping_bus_to_idx):

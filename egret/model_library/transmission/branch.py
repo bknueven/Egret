@@ -15,6 +15,7 @@ import math
 import pyomo.environ as pe
 from pyomo.environ import value
 import egret.model_library.transmission.tx_calc as tx_calc
+import egret.model_library.transmission.tx_utils as tx_utils
 import egret.model_library.decl as decl
 from egret.model_library.defn import FlowType, CoordinateType, ApproximationType, RelaxationType
 from egret.data.model_data import zip_items
@@ -519,7 +520,7 @@ def declare_eq_branch_power_qtdf_approx(model, index_set, branches, buses, bus_q
             g = tx_calc.calculate_conductance(branch)
             expr += (g / tau) * shift
 
-        qtdf = branch['qtdf_r']
+        qtdf = branch['qtdf']
         for bus_name, coef in qtdf.items():
             if qtdf_tol and abs(coef) < qtdf_tol:
                 continue
@@ -739,8 +740,7 @@ def declare_fdf_thermal_limit(model, index_set, thermal_limits, cuts=10):
 
 def declare_eq_branch_midpoint_power(model, index_set, branches, coordinate_type=CoordinateType.POLAR):
     """
-    Create the equality constraints for the real and imaginary power at the
-    midpoint on the branch
+    Create the equality constraints for the real power flow, real power loss, reactive power flow, reactive power loss.
     """
     assert(coordinate_type != CoordinateType.RECTANGULAR
            and "Midpoint branch power in rectangular coordinates not implemented.")

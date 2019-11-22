@@ -22,14 +22,14 @@ def create_dicts_of_fdf(md, base_point=BasePointType.SOLUTION):
     bus_attrs = md.attributes(element_type='bus')
 
     reference_bus = md.data['system']['reference_bus']
-    ptdf_r, ldf, ldf_c, ptdf_c = tx_calc.calculate_ptdf_ldf(branches, buses, branch_attrs['names'], bus_attrs['names'],
+    ptdf, ptdf_c, pldf, pldf_c = tx_calc.calculate_ptdf_pldf(branches, buses, branch_attrs['names'], bus_attrs['names'],
                                                     reference_bus, base_point)
     phi_from, phi_to = tx_calc.calculate_phi_constant(branches, branch_attrs['names'], bus_attrs['names'],
                                                       ApproximationType.PTDF_LOSSES)
     phi_loss_from, phi_loss_to = tx_calc.calculate_phi_loss_constant(branches, branch_attrs['names'],
                                                                      bus_attrs['names'], ApproximationType.PTDF_LOSSES)
 
-    qtdf_r, qldf, vdf, qtdf_c, qldf_c, vdf_c = tx_calc.calculate_qtdf_ldf_vdf(branches, buses, branch_attrs['names'],
+    qtdf, qtdf_c, qldf, qldf_c, vdf, vdf_c = tx_calc.calculate_qtdf_qldf_vdf(branches, buses, branch_attrs['names'],
                                                                               bus_attrs['names'], reference_bus,
                                                                               base_point)
 
@@ -44,18 +44,18 @@ def create_dicts_of_fdf(md, base_point=BasePointType.SOLUTION):
 
     for idx, branch_name in _mapping_branch.items():
         branch = md.data['elements']['branch'][branch_name]
-        _row_ptdf_r = {bus_attrs['names'][i]: ptdf_r[idx, i] for i in list(range(0, _len_bus))}
-        branch['ptdf'] = _row_ptdf_r
+        _row_ptdf = {bus_attrs['names'][i]: ptdf[idx, i] for i in list(range(0, _len_bus))}
+        branch['ptdf'] = _row_ptdf
 
-        _row_ldf = {bus_attrs['names'][i]: ldf[idx, i] for i in list(range(0, _len_bus))}
-        branch['ldf'] = _row_ldf
+        _row_pldf = {bus_attrs['names'][i]: pldf[idx, i] for i in list(range(0, _len_bus))}
+        branch['pldf'] = _row_pldf
 
         branch['ptdf_c'] = ptdf_c[idx]
 
-        branch['ldf_c'] = ldf_c[idx]
+        branch['pldf_c'] = pldf_c[idx]
 
-        _row_qtdf_r = {bus_attrs['names'][i]: qtdf_r[idx, i] for i in list(range(0, _len_bus))}
-        branch['qtdf_r'] = _row_qtdf_r
+        _row_qtdf = {bus_attrs['names'][i]: qtdf[idx, i] for i in list(range(0, _len_bus))}
+        branch['qtdf'] = _row_qtdf
 
         _row_qldf = {bus_attrs['names'][i]: qldf[idx, i] for i in list(range(0, _len_bus))}
         branch['qldf'] = _row_qldf

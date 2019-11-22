@@ -85,7 +85,7 @@ def declare_eq_branch_power_ptdf_approx(model, index_set, branches, buses, bus_p
             m.pf[branch_name] == expr
 
 
-def declare_eq_branch_loss_ptdf_approx(model, index_set, branches, buses, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts, ldf_tol = 1e-10, include_constant_term=False):
+def declare_eq_branch_loss_ptdf_approx(model, index_set, branches, buses, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts, pldf_tol = 1e-10, include_constant_term=False):
     """
     Create the equality constraints for losses (from PTDF approximation)
     in the branch
@@ -105,9 +105,9 @@ def declare_eq_branch_loss_ptdf_approx(model, index_set, branches, buses, bus_p_
             g = tx_calc.calculate_conductance(branch)
             expr += (g/tau) * shift**2
 
-        ldf = branch['ldf']
-        for bus_name, coef in ldf.items():
-            if ldf_tol and abs(coef) < ldf_tol:
+        pldf = branch['pldf']
+        for bus_name, coef in pldf.items():
+            if pldf_tol and abs(coef) < pldf_tol:
                 continue
             bus = buses[bus_name]
             phi_loss_from = bus['phi_loss_from']
@@ -129,7 +129,7 @@ def declare_eq_branch_loss_ptdf_approx(model, index_set, branches, buses, bus_p_
                 expr -= coef * phi_loss
 
         if include_constant_term:
-            expr += branch['ldf_c']
+            expr += branch['pldf_c']
 
         m.eq_pfl_branch[branch_name] = \
             m.pfl[branch_name] == expr
