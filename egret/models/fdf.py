@@ -396,6 +396,13 @@ def create_ccm_model(model_data, include_feasibility_slack=False, include_v_feas
     q_neg_bounds = {k: (0, inf) for k in gen_attrs['qg']}
     decl.declare_var('q_neg', model=model, index_set=gen_attrs['names'], bounds=q_neg_bounds)
 
+    ### declare the net withdrawal variables (for later use in defining constraints with efficient 'LinearExpression')
+    p_net_withdrawal_init = {k: 0 for k in bus_attrs['names']}
+    libbus.declare_var_p_nw(model, bus_attrs['names'], initialize=p_net_withdrawal_init)
+
+    q_net_withdrawal_init = {k: 0 for k in bus_attrs['names']}
+    libbus.declare_var_p_nw(model, bus_attrs['names'], initialize=q_net_withdrawal_init)
+
     ### declare the current flows in the branches #TODO: Why are the currents being calculated??
     vr_init = {k: bus_attrs['vm'][k] * pe.cos(bus_attrs['va'][k]) for k in bus_attrs['vm']}
     vj_init = {k: bus_attrs['vm'][k] * pe.sin(bus_attrs['va'][k]) for k in bus_attrs['vm']}
@@ -451,6 +458,10 @@ def create_ccm_model(model_data, include_feasibility_slack=False, include_v_feas
 #                             bounds=qf_bounds
 #                             )
     decl.declare_var('qfl', model=model, index_set=branch_attrs['names'], initialize=qfl_init)#, bounds=qfl_bounds)
+
+    ### declare net withdrawal definition constraints
+    libbus.declare_eq_p_net_withdraw_at_bus(model,bus_attrs['names'],bus_p_loads,gens_by_bus,bus_gs_fixed_shunts)
+    libbus.declare_eq_q_net_withdraw_at_bus(model,bus_attrs['names'],bus_q_loads,gens_by_bus,bus_bs_fixed_shunts)
 
     ### declare the midpoint power approximation constraints
     libbranch.declare_eq_branch_midpoint_power(model=model,

@@ -73,9 +73,15 @@ def declare_var_ql(model, index_set, **kwargs):
 
 def declare_var_p_nw(model, index_set, **kwargs):
     """
-    Create variable for the reactive power load at a bus
+    Create variable for the real power net withdrawal at a bus
     """
     decl.declare_var('p_nw', model=model, index_set=index_set, **kwargs)
+
+def declare_var_q_nw(model, index_set, **kwargs):
+    """
+    Create variable for the reactive powernet withdrawal at a bus
+    """
+    decl.declare_var('q_nw', model=model, index_set=index_set, **kwargs)
 
 
 def declare_expr_shunt_power_at_bus(model, index_set, shunt_attrs,
@@ -104,7 +110,7 @@ def declare_expr_shunt_power_at_bus(model, index_set, shunt_attrs,
 
 def declare_expr_p_net_withdraw_at_bus(model, index_set, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts ):
     """
-    Create a named pyomo expression for bus net withdraw
+    Create a named pyomo expression for real power bus net withdraw
     """
     m = model
     decl.declare_expr('p_nw', model, index_set)
@@ -116,7 +122,7 @@ def declare_expr_p_net_withdraw_at_bus(model, index_set, bus_p_loads, gens_by_bu
         
 def declare_eq_p_net_withdraw_at_bus(model, index_set, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts ):
     """
-    Create a named pyomo expression for bus net withdraw
+    Create a named pyomo expression for real power bus net withdraw
     """
     m = model
     con_set = decl.declare_set('_con_eq_p_net_withdraw_at_bus', model, index_set)
@@ -127,7 +133,36 @@ def declare_eq_p_net_withdraw_at_bus(model, index_set, bus_p_loads, gens_by_bus,
         m.eq_p_net_withdraw_at_bus[b] = m.p_nw[b] == ( bus_gs_fixed_shunts[b] 
                                                     + ( m.pl[b] if bus_p_loads[b] != 0.0 else 0.0 )
                                                     - sum( m.pg[g] for g in gens_by_bus[b] ) )
-                    
+
+
+def declare_expr_q_net_withdraw_at_bus(model, index_set, bus_q_loads, gens_by_bus, bus_bs_fixed_shunts):
+    """
+    Create a named pyomo expression for reactive power bus net withdraw
+    """
+    m = model
+    decl.declare_expr('q_nw', model, index_set)
+
+    for b in index_set:
+        m.q_nw[b] = (-bus_bs_fixed_shunts[b]
+                     + (m.ql[b] if bus_q_loads[b] != 0.0 else 0.0)
+                     - sum(m.qg[g] for g in gens_by_bus[b]))
+
+
+def declare_eq_q_net_withdraw_at_bus(model, index_set, bus_q_loads, gens_by_bus, bus_bs_fixed_shunts):
+    """
+    Create a named pyomo expression for reactive power bus net withdraw
+    """
+    m = model
+    con_set = decl.declare_set('_con_eq_q_net_withdraw_at_bus', model, index_set)
+
+    m.eq_q_net_withdraw_at_bus = pe.Constraint(con_set)
+
+    for b in index_set:
+        m.eq_q_net_withdraw_at_bus[b] = m.q_nw[b] == (-bus_bs_fixed_shunts[b]
+                                                      + (m.ql[b] if bus_q_loads[b] != 0.0 else 0.0)
+                                                      - sum(m.qg[g] for g in gens_by_bus[b]))
+
+
 def declare_eq_ref_bus_nonzero(model, ref_angle, ref_bus):
     """
     Create an equality constraint to enforce tan(\theta) = vj/vr at  the reference bus
