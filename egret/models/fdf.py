@@ -162,7 +162,7 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
     libbus.declare_var_p_nw(model, bus_attrs['names'], initialize=p_net_withdrawal_init)
 
     q_net_withdrawal_init = {k: 0 for k in bus_attrs['names']}
-    libbus.declare_var_p_nw(model, bus_attrs['names'], initialize=q_net_withdrawal_init)
+    libbus.declare_var_q_nw(model, bus_attrs['names'], initialize=q_net_withdrawal_init)
 
     ### declare the current flows in the branches #TODO: Why are we calculating currents for FDF initialization? Only need P,Q,V,theta
     vr_init = {k: bus_attrs['vm'][k] * pe.cos(bus_attrs['va'][k]) for k in bus_attrs['vm']}
@@ -415,7 +415,7 @@ def create_ccm_model(model_data, include_feasibility_slack=False, include_v_feas
     libbus.declare_var_p_nw(model, bus_attrs['names'], initialize=p_net_withdrawal_init)
 
     q_net_withdrawal_init = {k: 0 for k in bus_attrs['names']}
-    libbus.declare_var_p_nw(model, bus_attrs['names'], initialize=q_net_withdrawal_init)
+    libbus.declare_var_q_nw(model, bus_attrs['names'], initialize=q_net_withdrawal_init)
 
     ### declare the current flows in the branches #TODO: Why are the currents being calculated??
     vr_init = {k: bus_attrs['vm'][k] * pe.cos(bus_attrs['va'][k]) for k in bus_attrs['vm']}

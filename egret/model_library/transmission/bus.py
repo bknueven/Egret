@@ -79,7 +79,7 @@ def declare_var_p_nw(model, index_set, **kwargs):
 
 def declare_var_q_nw(model, index_set, **kwargs):
     """
-    Create variable for the reactive powernet withdrawal at a bus
+    Create variable for the reactive power net withdrawal at a bus
     """
     decl.declare_var('q_nw', model=model, index_set=index_set, **kwargs)
 
