@@ -157,6 +157,13 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
     q_neg_bounds = {k: (0, inf) for k in gen_attrs['qg']}
     decl.declare_var('q_neg', model=model, index_set=gen_attrs['names'], bounds=q_neg_bounds)
 
+    ### declare the net withdrawal variables (for later use in defining constraints with efficient 'LinearExpression')
+    p_net_withdrawal_init = {k: 0 for k in bus_attrs['names']}
+    libbus.declare_var_p_nw(model, bus_attrs['names'], initialize=p_net_withdrawal_init)
+
+    q_net_withdrawal_init = {k: 0 for k in bus_attrs['names']}
+    libbus.declare_var_p_nw(model, bus_attrs['names'], initialize=q_net_withdrawal_init)
+
     ### declare the current flows in the branches #TODO: Why are we calculating currents for FDF initialization? Only need P,Q,V,theta
     vr_init = {k: bus_attrs['vm'][k] * pe.cos(bus_attrs['va'][k]) for k in bus_attrs['vm']}
     vj_init = {k: bus_attrs['vm'][k] * pe.sin(bus_attrs['va'][k]) for k in bus_attrs['vm']}
@@ -217,6 +224,10 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
                               initialize=qfl_init)  # ,
 #                              bounds=qfl_bounds
 #                              )
+
+    ### declare net withdrawal definition constraints
+    libbus.declare_eq_p_net_withdraw_at_bus(model,bus_attrs['names'],bus_p_loads,gens_by_bus,bus_gs_fixed_shunts)
+    libbus.declare_eq_q_net_withdraw_at_bus(model,bus_attrs['names'],bus_q_loads,gens_by_bus,bus_bs_fixed_shunts)
 
     ### declare the branch real power flow approximation constraints
     libbranch_deprecated.declare_eq_branch_power_ptdf_approx(model=model,
@@ -321,7 +332,10 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
 
 
 def create_ccm_model(model_data, include_feasibility_slack=False, include_v_feasibility_slack=False, calculation_method=SensitivityCalculationMethod.INVERT):
-    ''' convex combination midpoint (ccm) model '''
+    '''
+    convex combination midpoint (ccm) model
+    NEED TO REMOVE FROM FDF.PY
+    '''
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
