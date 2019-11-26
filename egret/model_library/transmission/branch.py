@@ -440,22 +440,18 @@ def declare_eq_branch_power_ptdf_approx(model, index_set, PTDF_MAT, PTDF_CONST, 
         else:
             m.pf[branch_name] = expr
 
-def get_branch_loss_expr_ptdf_approx(model, branch_name, PLDF_MAT, PLDF_CONST, rel_ptdf_tol=None, abs_ptdf_tol=None):
+def get_branch_loss_expr_pldf_approx(model, branch_name, pldf, pldf_c, rel_pldf_tol=None, abs_pldf_tol=None):
     """
     Create a pyomo power flow loss expression from PTDF matrix
     """
-    if rel_ptdf_tol is None:
-        rel_ptdf_tol = 0.
-    if abs_ptdf_tol is None:
-        abs_ptdf_tol = 0.
+    if rel_pldf_tol is None:
+        rel_pldf_tol = 0.
+    if abs_pldf_tol is None:
+        abs_pldf_tol = 0.
 
-    const = PTDF.get_branch_losses_phase_shift(branch_name)
-    const += PTDF.get_branch_ldf_c(branch_name)
-    const += PTDF.get_branch_phi_losses_adj(branch_name)
-
-    max_coef = PTDF.get_branch_ldf_abs_max(branch_name)
-
-    ptdf_tol = max(abs_ptdf_tol, rel_ptdf_tol*max_coef) 
+    #max_coef = PTDF.get_branch_ldf_abs_max(branch_name)
+    max_coef = 1
+    pldf_tol = max(abs_pldf_tol, rel_pldf_tol*max_coef)
     ## NOTE: It would be easy to hold on to the 'ptdf' dictionary here,
     ##       if we wanted to
     m_p_nw = model.p_nw
@@ -464,26 +460,26 @@ def get_branch_loss_expr_ptdf_approx(model, branch_name, PLDF_MAT, PLDF_CONST, r
     if isinstance(m_p_nw, pe.Var):
         coef_list = list()
         var_list = list()
-        for bus_name, coef in PTDF.get_branch_ldf_iterator(branch_name):
-            if abs(coef) >= ptdf_tol:
+        for bus_name, coef in pldf.items():
+            if abs(coef) >= pldf_tol:
                 coef_list.append(coef)
                 var_list.append(m_p_nw[bus_name])
 
-        lin_expr_list = [const] + coef_list + var_list 
+        lin_expr_list = [pldf_c] + coef_list + var_list
         expr = LinearExpression(lin_expr_list)
     else:
-        expr = quicksum( (coef*m_p_nw[bus_name] for bus_name, coef in PTDF.get_branch_ldf_iterator(branch_name) if abs(coef) >= ptdf_tol), start=const, linear=True)
+        expr = quicksum( (coef*m_p_nw[bus_name] for bus_name, coef in pldf.items() if abs(coef) >= pldf_tol), start=pldf_c, linear=True)
 
     return expr
 
-def declare_eq_branch_loss_ptdf_approx(model, index_set, PTDF, rel_ptdf_tol=None, abs_ptdf_tol=None):
+def declare_eq_branch_loss_pldf_approx(model, index_set, PLDF_MAT, PLDF_CONST, rel_pldf_tol=None, abs_pldf_tol=None):
     """
     Create the equality constraints or expressions for losses (from PTDF 
     approximation) in the branch
     """
     m = model
 
-    con_set = decl.declare_set("_con_eq_branch_loss_ptdf_approx_set", model, index_set)
+    con_set = decl.declare_set("_con_eq_branch_loss_pldf_approx_set", model, index_set)
     pfl_is_var = isinstance(m.pfl, pe.Var)
     if pfl_is_var:
         m.eq_pfl_branch = pe.Constraint(con_set)
@@ -492,8 +488,10 @@ def declare_eq_branch_loss_ptdf_approx(model, index_set, PTDF, rel_ptdf_tol=None
             raise Exception("Unrecognized type for m.pfl", m.pfl.pprint())
 
     for branch_name in con_set:
+        pldf = PLDF_MAT[branch_name]
+        pldf_c = PLDF_CONST[branch_name]
         expr = \
-            get_branch_loss_expr_ptdf_approx(m, branch_name, PTDF, rel_ptdf_tol=rel_ptdf_tol, abs_ptdf_tol=abs_ptdf_tol)
+            get_branch_loss_expr_pldf_approx(m, branch_name, pldf, pldf_c, rel_pldf_tol=rel_pldf_tol, abs_pldf_tol=abs_pldf_tol)
 
         if pfl_is_var:
             m.eq_pfl_branch[branch_name] = \

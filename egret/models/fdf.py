@@ -259,15 +259,22 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
                                                   )
 
     ### declare the branch real power loss approximation constraints
-    libbranch_deprecated.declare_eq_branch_loss_ptdf_approx(model=model,
-                                                  index_set=branch_attrs['names'],
-                                                  branches=branches,
-                                                  buses=buses,
-                                                  bus_p_loads=bus_p_loads,
-                                                  gens_by_bus=gens_by_bus,
-                                                  bus_gs_fixed_shunts=bus_gs_fixed_shunts,
-                                                  include_constant_term=True
-                                                  )
+    #libbranch_deprecated.declare_eq_branch_loss_ptdf_approx(model=model,
+    #                                              index_set=branch_attrs['names'],
+    #                                              branches=branches,
+    #                                              buses=buses,
+    #                                              bus_p_loads=bus_p_loads,
+    #                                              gens_by_bus=gens_by_bus,
+    #                                              bus_gs_fixed_shunts=bus_gs_fixed_shunts,
+    #                                              include_constant_term=True
+    #                                              )
+    libbranch.declare_eq_branch_loss_pldf_approx(model=model,
+                                                 index_set=branch_attrs['names'],
+                                                 PLDF_MAT=branch_attrs['pldf'],
+                                                 PLDF_CONST=branch_attrs['pldf_c'],
+                                                 rel_pldf_tol=None,
+                                                 abs_pldf_tol=None
+                                                 )
 
     ### declare the branch reactive power loss approximation constraints
     libbranch.declare_eq_branch_loss_qtdf_approx(model=model,
