@@ -230,16 +230,23 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
     libbus.declare_eq_q_net_withdraw_at_bus(model,bus_attrs['names'],bus_q_loads,gens_by_bus,bus_bs_fixed_shunts)
 
     ### declare the branch real power flow approximation constraints
-    libbranch_deprecated.declare_eq_branch_power_ptdf_approx(model=model,
-                                                  index_set=branch_attrs['names'],
-                                                  branches=branches,
-                                                  buses=buses,
-                                                  bus_p_loads=bus_p_loads,
-                                                  gens_by_bus=gens_by_bus,
-                                                  bus_gs_fixed_shunts=bus_gs_fixed_shunts,
-                                                  include_constant_term=True, #True
-                                                  approximation_type=ApproximationType.FDF #FDF
-                                                  )
+    #libbranch_deprecated.declare_eq_branch_power_ptdf_approx(model=model,
+    #                                              index_set=branch_attrs['names'],
+    #                                              branches=branches,
+    #                                              buses=buses,
+    #                                              bus_p_loads=bus_p_loads,
+    #                                              gens_by_bus=gens_by_bus,
+    #                                              bus_gs_fixed_shunts=bus_gs_fixed_shunts,
+    #                                              include_constant_term=True, #True
+    #                                              approximation_type=ApproximationType.FDF #FDF
+    #                                              )
+    libbranch.declare_eq_branch_power_ptdf_approx(model=model,
+                                               index_set=branch_attrs['names'],
+                                               PTDF_MAT=branch_attrs['ptdf'],
+                                               PTDF_CONST=branch_attrs['ptdf_c'],
+                                               rel_ptdf_tol=None,
+                                               abs_ptdf_tol=None
+                                               )
 
     ### declare the branch reactive power flow approximation constraints
     libbranch.declare_eq_branch_power_qtdf_approx(model=model,
