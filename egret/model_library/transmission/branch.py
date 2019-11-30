@@ -375,20 +375,20 @@ def declare_eq_branch_loss_btheta_approx(model, index_set, branches, relaxation_
                 m.pfl[branch_name] >= \
                 g * (m.dva[branch_name])**2
 
-def get_power_flow_expr_ptdf_approx(model, branch_name, ptdf, ptdf_c, rel_ptdf_tol=None, abs_ptdf_tol=None):
+def get_power_flow_expr_ptdf_approx(model, branch_name, ptdf, ptdf_c, rel_tol=None, abs_tol=None):
     """
     Create a pyomo power flow expression from PTDF matrix
     """
 
-    if rel_ptdf_tol is None:
-        rel_ptdf_tol = 0.
-    if abs_ptdf_tol is None:
-        abs_ptdf_tol = 0.
+    if rel_tol is None:
+        rel_tol = 0.
+    if abs_tol is None:
+        abs_tol = 0.
 
     #const = PTDF.get_branch_phase_shift(branch_name) + PTDF.get_branch_phi_adj(branch_name)
     #max_coef = PTDF.get_branch_ptdf_abs_max(branch_name)
     max_coef = 1
-    ptdf_tol = max(abs_ptdf_tol, rel_ptdf_tol*max_coef)
+    ptdf_tol = max(abs_tol, rel_tol*max_coef)
     ## NOTE: It would be easy to hold on to the 'ptdf' dictionary here,
     ##       if we wanted to
     m_p_nw = model.p_nw
@@ -410,7 +410,7 @@ def get_power_flow_expr_ptdf_approx(model, branch_name, ptdf, ptdf_c, rel_ptdf_t
 
     return expr
 
-def declare_eq_branch_power_ptdf_approx(model, index_set, PTDF_MAT, PTDF_CONST, rel_ptdf_tol=None, abs_ptdf_tol=None):
+def declare_eq_branch_power_ptdf_approx(model, index_set, PTDF_MAT, PTDF_CONST, rel_tol=None, abs_tol=None):
     """
     Create the equality constraints or expressions for power (from PTDF 
     approximation) in the branch
@@ -432,7 +432,7 @@ def declare_eq_branch_power_ptdf_approx(model, index_set, PTDF_MAT, PTDF_CONST, 
         ptdf = PTDF_MAT[branch_name]
         ptdf_c = PTDF_CONST[branch_name]
         expr = \
-            get_power_flow_expr_ptdf_approx(m, branch_name, ptdf, ptdf_c, rel_ptdf_tol=rel_ptdf_tol, abs_ptdf_tol=abs_ptdf_tol)
+            get_power_flow_expr_ptdf_approx(m, branch_name, ptdf, ptdf_c, rel_tol=rel_tol, abs_tol=abs_tol)
 
         if pf_is_var:
             m.eq_pf_branch[branch_name] = \
@@ -440,18 +440,18 @@ def declare_eq_branch_power_ptdf_approx(model, index_set, PTDF_MAT, PTDF_CONST, 
         else:
             m.pf[branch_name] = expr
 
-def get_branch_loss_expr_pldf_approx(model, branch_name, pldf, pldf_c, rel_pldf_tol=None, abs_pldf_tol=None):
+def get_branch_loss_expr_pldf_approx(model, branch_name, pldf, pldf_c, rel_tol=None, abs_tol=None):
     """
     Create a pyomo power flow loss expression from PTDF matrix
     """
-    if rel_pldf_tol is None:
-        rel_pldf_tol = 0.
-    if abs_pldf_tol is None:
-        abs_pldf_tol = 0.
+    if rel_tol is None:
+        rel_tol = 0.
+    if abs_tol is None:
+        abs_tol = 0.
 
     #max_coef = PTDF.get_branch_ldf_abs_max(branch_name)
     max_coef = 1
-    pldf_tol = max(abs_pldf_tol, rel_pldf_tol*max_coef)
+    pldf_tol = max(abs_tol, rel_tol*max_coef)
     ## NOTE: It would be easy to hold on to the 'ptdf' dictionary here,
     ##       if we wanted to
     m_p_nw = model.p_nw
@@ -472,7 +472,7 @@ def get_branch_loss_expr_pldf_approx(model, branch_name, pldf, pldf_c, rel_pldf_
 
     return expr
 
-def declare_eq_branch_loss_pldf_approx(model, index_set, PLDF_MAT, PLDF_CONST, rel_pldf_tol=None, abs_pldf_tol=None):
+def declare_eq_branch_loss_pldf_approx(model, index_set, PLDF_MAT, PLDF_CONST, rel_tol=None, abs_tol=None):
     """
     Create the equality constraints or expressions for losses (from PTDF 
     approximation) in the branch
@@ -491,7 +491,7 @@ def declare_eq_branch_loss_pldf_approx(model, index_set, PLDF_MAT, PLDF_CONST, r
         pldf = PLDF_MAT[branch_name]
         pldf_c = PLDF_CONST[branch_name]
         expr = \
-            get_branch_loss_expr_pldf_approx(m, branch_name, pldf, pldf_c, rel_pldf_tol=rel_pldf_tol, abs_pldf_tol=abs_pldf_tol)
+            get_branch_loss_expr_pldf_approx(m, branch_name, pldf, pldf_c, rel_tol=rel_tol, abs_tol=abs_tol)
 
         if pfl_is_var:
             m.eq_pfl_branch[branch_name] = \

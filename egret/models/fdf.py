@@ -233,8 +233,8 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
                                                index_set=branch_attrs['names'],
                                                PTDF_MAT=branch_attrs['ptdf'],
                                                PTDF_CONST=branch_attrs['ptdf_c'],
-                                               rel_ptdf_tol=None,
-                                               abs_ptdf_tol=None
+                                               rel_tol=None,
+                                               abs_tol=None
                                                )
 
     libbranch.declare_eq_branch_power_qtdf_approx(model=model,
@@ -249,8 +249,8 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
                                                  index_set=branch_attrs['names'],
                                                  PLDF_MAT=branch_attrs['pldf'],
                                                  PLDF_CONST=branch_attrs['pldf_c'],
-                                                 rel_pldf_tol=None,
-                                                 abs_pldf_tol=None
+                                                 rel_tol=None,
+                                                 abs_tol=None
                                                  )
 
     libbranch.declare_eq_branch_loss_qldf_approx(model=model,
