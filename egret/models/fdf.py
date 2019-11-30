@@ -229,6 +229,40 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
     libbus.declare_eq_p_net_withdraw_at_bus(model,bus_attrs['names'],bus_p_loads,gens_by_bus,bus_gs_fixed_shunts)
     libbus.declare_eq_q_net_withdraw_at_bus(model,bus_attrs['names'],bus_q_loads,gens_by_bus,bus_bs_fixed_shunts)
 
+    libbranch.declare_eq_branch_power_ptdf_approx(model=model,
+                                               index_set=branch_attrs['names'],
+                                               PTDF_MAT=branch_attrs['ptdf'],
+                                               PTDF_CONST=branch_attrs['ptdf_c'],
+                                               rel_ptdf_tol=None,
+                                               abs_ptdf_tol=None
+                                               )
+
+    libbranch.declare_eq_branch_power_qtdf_approx(model=model,
+                                               index_set=branch_attrs['names'],
+                                               QTDF_MAT=branch_attrs['qtdf'],
+                                               QTDF_CONST=branch_attrs['qtdf_c'],
+                                               rel_tol=None,
+                                               abs_tol=None
+                                               )
+
+    libbranch.declare_eq_branch_loss_pldf_approx(model=model,
+                                                 index_set=branch_attrs['names'],
+                                                 PLDF_MAT=branch_attrs['pldf'],
+                                                 PLDF_CONST=branch_attrs['pldf_c'],
+                                                 rel_pldf_tol=None,
+                                                 abs_pldf_tol=None
+                                                 )
+
+    libbranch.declare_eq_branch_loss_qldf_approx(model=model,
+                                                 index_set=branch_attrs['names'],
+                                                 QLDF_MAT=branch_attrs['qldf'],
+                                                 QLDF_CONST=branch_attrs['qldf_c'],
+                                                 rel_tol=None,
+                                                 abs_tol=None
+                                                 )
+
+    # * * * * *  Depreciated real/reactive power flow constraints below * * * * * #
+
     ### declare the branch real power flow approximation constraints
     #libbranch_deprecated.declare_eq_branch_power_ptdf_approx(model=model,
     #                                              index_set=branch_attrs['names'],
@@ -240,24 +274,6 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
     #                                              include_constant_term=True, #True
     #                                              approximation_type=ApproximationType.FDF #FDF
     #                                              )
-    libbranch.declare_eq_branch_power_ptdf_approx(model=model,
-                                               index_set=branch_attrs['names'],
-                                               PTDF_MAT=branch_attrs['ptdf'],
-                                               PTDF_CONST=branch_attrs['ptdf_c'],
-                                               rel_ptdf_tol=None,
-                                               abs_ptdf_tol=None
-                                               )
-
-    ### declare the branch reactive power flow approximation constraints
-    libbranch.declare_eq_branch_power_qtdf_approx(model=model,
-                                                  index_set=branch_attrs['names'],
-                                                  branches=branches,
-                                                  buses=buses,
-                                                  bus_q_loads=bus_q_loads,
-                                                  gens_by_bus=gens_by_bus,
-                                                  bus_bs_fixed_shunts=bus_bs_fixed_shunts
-                                                  )
-
     ### declare the branch real power loss approximation constraints
     #libbranch_deprecated.declare_eq_branch_loss_ptdf_approx(model=model,
     #                                              index_set=branch_attrs['names'],
@@ -268,23 +284,24 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
     #                                              bus_gs_fixed_shunts=bus_gs_fixed_shunts,
     #                                              include_constant_term=True
     #                                              )
-    libbranch.declare_eq_branch_loss_pldf_approx(model=model,
-                                                 index_set=branch_attrs['names'],
-                                                 PLDF_MAT=branch_attrs['pldf'],
-                                                 PLDF_CONST=branch_attrs['pldf_c'],
-                                                 rel_pldf_tol=None,
-                                                 abs_pldf_tol=None
-                                                 )
-
+    ### declare the branch reactive power flow approximation constraints
+    #libbranch.declare_eq_branch_power_qtdf_approx_depreciated(model=model,
+    #                                              index_set=branch_attrs['names'],
+    #                                              branches=branches,
+    #                                              buses=buses,
+    #                                              bus_q_loads=bus_q_loads,
+    #                                              gens_by_bus=gens_by_bus,
+    #                                              bus_bs_fixed_shunts=bus_bs_fixed_shunts
+    #                                              )
     ### declare the branch reactive power loss approximation constraints
-    libbranch.declare_eq_branch_loss_qtdf_approx(model=model,
-                                                  index_set=branch_attrs['names'],
-                                                  branches=branches,
-                                                  buses=buses,
-                                                  bus_q_loads=bus_q_loads,
-                                                  gens_by_bus=gens_by_bus,
-                                                  bus_bs_fixed_shunts=bus_bs_fixed_shunts
-                                                  )
+    #libbranch.declare_eq_branch_loss_qtdf_approx_depreciated(model=model,
+    #                                              index_set=branch_attrs['names'],
+    #                                              branches=branches,
+    #                                              buses=buses,
+    #                                              bus_q_loads=bus_q_loads,
+    #                                              gens_by_bus=gens_by_bus,
+    #                                              bus_bs_fixed_shunts=bus_bs_fixed_shunts
+    #                                              )
 
     ### declare the p balance
     libbus.declare_eq_p_balance_fdf(model=model,

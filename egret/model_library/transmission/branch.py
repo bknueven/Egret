@@ -499,7 +499,131 @@ def declare_eq_branch_loss_pldf_approx(model, index_set, PLDF_MAT, PLDF_CONST, r
         else:
             m.pfl[branch_name] = expr
 
-def declare_eq_branch_power_qtdf_approx(model, index_set, branches, buses, bus_q_loads, gens_by_bus,
+def get_power_flow_expr_qtdf_approx(model, branch_name, qtdf, qtdf_c, rel_tol=None, abs_tol=None):
+    """
+    Create a pyomo power flow expression from QTDF matrix (reactive power flows)
+    """
+
+    if rel_tol is None:
+        rel_tol = 0.
+    if abs_tol is None:
+        abs_tol = 0.
+
+    #const = QTDF.get_branch_phase_shift(branch_name) + QTDF.get_branch_phi_adj(branch_name)
+    #max_coef = QTDF.get_branch_ptdf_abs_max(branch_name)
+    max_coef = 1
+    qtdf_tol = max(abs_tol, rel_tol*max_coef)
+    ## NOTE: It would be easy to hold on to the 'ptdf' dictionary here,
+    ##       if we wanted to
+    m_q_nw = model.q_nw
+    ## if model.q_nw is Var, we can use LinearExpression
+    ## to build these dense constraints much faster
+    if isinstance(m_q_nw, pe.Var):
+        coef_list = list()
+        var_list = list()
+        #for bus_name, coef in PTDF.get_branch_ptdf_iterator(branch_name):
+        for bus_name, coef in qtdf.items():
+            if abs(coef) >= qtdf_tol:
+                coef_list.append(coef)
+                var_list.append(m_q_nw[bus_name])
+
+        lin_expr_list = [qtdf_c] + coef_list + var_list
+        expr = LinearExpression(lin_expr_list)
+    else:
+        expr = quicksum( (coef*m_q_nw[bus_name] for bus_name, coef in qtdf.items() if abs(coef) >= qtdf_tol), start=qtdf_c, linear=True)
+
+    return expr
+
+def declare_eq_branch_power_qtdf_approx(model, index_set, QTDF_MAT, QTDF_CONST, rel_tol=None, abs_tol=None):
+    """
+    Create the equality constraints or expressions for power (from QTDF
+    approximation) in the branch
+    """
+
+    m = model
+
+    con_set = decl.declare_set("_con_eq_branch_power_qtdf_approx_set", model, index_set)
+
+    qf_is_var = isinstance(m.qf, pe.Var)
+
+    if qf_is_var:
+        m.eq_qf_branch = pe.Constraint(con_set)
+    else:
+        if not isinstance(m.qf, pe.Expression):
+            raise Exception("Unrecognized type for m.qf", m.qf.pprint())
+
+    for branch_name in con_set:
+        qtdf = QTDF_MAT[branch_name]
+        qtdf_c = QTDF_CONST[branch_name]
+        expr = \
+            get_power_flow_expr_qtdf_approx(m, branch_name, qtdf, qtdf_c, rel_tol=rel_tol, abs_tol=abs_tol)
+
+        if qf_is_var:
+            m.eq_qf_branch[branch_name] = \
+                m.qf[branch_name] == expr
+        else:
+            m.qf[branch_name] = expr
+
+def get_branch_loss_expr_qldf_approx(model, branch_name, qldf, qldf_c, rel_tol=None, abs_tol=None):
+    """
+    Create a pyomo power flow loss expression from QLDF matrix
+    """
+    if rel_tol is None:
+        rel_tol = 0.
+    if abs_tol is None:
+        abs_tol = 0.
+
+    #max_coef = QTDF.get_branch_ldf_abs_max(branch_name)
+    max_coef = 1
+    qldf_tol = max(abs_tol, rel_tol*max_coef)
+    ## NOTE: It would be easy to hold on to the 'qldf' dictionary here,
+    ##       if we wanted to
+    m_q_nw = model.q_nw
+    ## if model.q_nw is Var, we can use LinearExpression
+    ## to build these dense constraints much faster
+    if isinstance(m_q_nw, pe.Var):
+        coef_list = list()
+        var_list = list()
+        for bus_name, coef in qldf.items():
+            if abs(coef) >= qldf_tol:
+                coef_list.append(coef)
+                var_list.append(m_q_nw[bus_name])
+
+        lin_expr_list = [qldf_c] + coef_list + var_list
+        expr = LinearExpression(lin_expr_list)
+    else:
+        expr = quicksum( (coef*m_q_nw[bus_name] for bus_name, coef in qldf.items() if abs(coef) >= qldf_tol), start=qldf_c, linear=True)
+
+    return expr
+
+def declare_eq_branch_loss_qldf_approx(model, index_set, QLDF_MAT, QLDF_CONST, rel_tol=None, abs_tol=None):
+    """
+    Create the equality constraints or expressions for losses (from QLDF
+    approximation) in the branch
+    """
+    m = model
+
+    con_set = decl.declare_set("_con_eq_branch_loss_qldf_approx_set", model, index_set)
+    qfl_is_var = isinstance(m.qfl, pe.Var)
+    if qfl_is_var:
+        m.eq_qfl_branch = pe.Constraint(con_set)
+    else:
+        if not isinstance(m.qfl, pe.Expression):
+            raise Exception("Unrecognized type for m.qfl", m.qfl.pprint())
+
+    for branch_name in con_set:
+        qldf = QLDF_MAT[branch_name]
+        qldf_c = QLDF_CONST[branch_name]
+        expr = \
+            get_branch_loss_expr_qldf_approx(m, branch_name, qldf, qldf_c, rel_tol=rel_tol, abs_tol=abs_tol)
+
+        if qfl_is_var:
+            m.eq_qfl_branch[branch_name] = \
+                m.qfl[branch_name] == expr
+        else:
+            m.qfl[branch_name] = expr
+
+def declare_eq_branch_power_qtdf_approx_depreciated(model, index_set, branches, buses, bus_q_loads, gens_by_bus,
                                         bus_bs_fixed_shunts, qtdf_tol=1e-10):
     """
     Create the equality constraints for reactive power (from QTDF approximation)
@@ -549,7 +673,7 @@ def declare_eq_branch_power_qtdf_approx(model, index_set, branches, buses, bus_q
             m.qf[branch_name] == expr
 
 
-def declare_eq_branch_loss_qtdf_approx(model, index_set, branches, buses, bus_q_loads, gens_by_bus, bus_bs_fixed_shunts, qldf_tol = 1e-10):
+def declare_eq_branch_loss_qtdf_approx_depreciated(model, index_set, branches, buses, bus_q_loads, gens_by_bus, bus_bs_fixed_shunts, qldf_tol = 1e-10):
     """
     Create the equality constraints for losses (from QTDF approximation)
     in the branch
