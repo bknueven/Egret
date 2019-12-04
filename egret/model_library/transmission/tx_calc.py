@@ -14,6 +14,7 @@ different computations for transmission models
 import math
 import numpy as np
 import scipy as sp
+import pandas as pd
 from math import cos, sin
 from egret.model_library.defn import BasePointType, ApproximationType
 
@@ -765,7 +766,8 @@ def _calculate_pfl_constant(branches,buses,index_set_branch,base_point=BasePoint
             tm = buses[to_bus]['va']
 
         pfl_constant[idx_row] = g2 * (vn ** 2) + _g * (vm ** 2) \
-                              - 2 * g * vn * vm * (sin(tn - tm + shift) * (tn - tm) + cos(tn - tm + shift))
+                                        - 2 * g * vn * vm * cos(tn - tm + shift) \
+                                        + 2 * g * vn * vm * sin(tn - tm + shift) * (tn - tm)
 
     return pfl_constant
 
@@ -936,6 +938,9 @@ def calculate_ptdf_pldf(branches,buses,index_set_branch,index_set_bus,reference_
     M2 = AA@L
     M = M1 + 0.5 * M2
 
+    # Note: "a.A" returns dense ndarray object, same usage as "a.toarray()". Dense array is recommended for matrix inversion.
+    # Careful w/ matrix "A" and intrinsic function "a.A"
+
     ref_bus_row = sp.sparse.coo_matrix(([1],([0],[_ref_bus_idx])), shape=(1,_len_bus))
     ref_bus_col = sp.sparse.coo_matrix(([1],([_ref_bus_idx],[0])), shape=(_len_bus,1))
 
@@ -953,9 +958,10 @@ def calculate_ptdf_pldf(branches,buses,index_set_branch,index_set_bus,reference_
             pass
         SENSI = SENSI[:-1,:-1]
 
-        PTDF = np.matmul(J.A, SENSI)
-        PLDF = np.matmul(L.A, SENSI)
-    elif len(sparse_index_set_branch) < _len_branch:
+        PTDF = np.matmul(-J.A, SENSI)
+        PLDF = np.matmul(-L.A, SENSI)
+    elif len(sparse_index_set_branch) < _len_branch: #TODO: the steps below aren't clear and need comments to decirbe what is happening
+        print('Warning: Something is happenening with the power flow Jacobian.')
         B_J = np.array([], dtype=np.int64).reshape(_len_bus + 1, 0)
         B_L = np.array([], dtype=np.int64).reshape(_len_bus + 1, 0)
         _sparse_mapping_branch = {i: branch_n for i, branch_n in enumerate(index_set_branch) if branch_n in sparse_index_set_branch}
@@ -974,18 +980,29 @@ def calculate_ptdf_pldf(branches,buses,index_set_branch,index_set_bus,reference_
 
         row_idx = list(_sparse_mapping_branch.keys())
         PTDF = sp.sparse.lil_matrix((_len_branch, _len_bus))
-        _ptdf = sp.sparse.linalg.spsolve(J0.transpose().tocsr(), B_J).T
+        _ptdf = sp.sparse.linalg.spsolve(J0.transpose().tocsr(), -B_J).T
         PTDF[row_idx] = _ptdf[:, :-1]
 
         PLDF = sp.sparse.lil_matrix((_len_branch, _len_bus))
-        _pldf = sp.sparselinalg.spsolve(J0.transpose().tocsr(), B_L).T
+        _pldf = sp.sparselinalg.spsolve(-J0.transpose().tocsr(), -B_L).T
         PLDF[row_idx] = _pldf[:, :-1]
 
     M1 = A@Jc
     M2 = AA@Lc
     M = M1 + 0.5 * M2
-    PT_constant = -PTDF@M + Jc
-    PL_constant = -PLDF@M + Lc
+    PT_constant = PTDF@M + Jc
+    PL_constant = PLDF@M + Lc
+
+    # display for debugging
+    show_me = {'ptdf_m' : PTDF@M }
+    show_me.update({'Jc' : Jc})
+    show_me.update({'pldf_m' : PLDF@M })
+    show_me.update({'Lc' : Lc})
+    #nw = buses['nw'] # need to implement this in the acopf model
+    #show_me.update({'ptdf@nw' : PTDF@nw })
+    print('PTDF and PLDF intermediate calculations')
+    print(pd.DataFrame(show_me))
+
 
     return PTDF, PT_constant, PLDF, PL_constant
 
