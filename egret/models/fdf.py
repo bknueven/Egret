@@ -253,6 +253,14 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
                                                  abs_tol=None
                                                  )
 
+    libbus.declare_eq_vm_vdf_approx(model=model,
+                                    index_set=bus_attrs['names'],
+                                    VDF_MAT=bus_attrs['vdf'],
+                                    VDF_CONST=bus_attrs['vdf_c'],
+                                    rel_tol=None,
+                                    abs_tol=None
+                                    )
+
     libbranch.declare_eq_branch_loss_qldf_approx(model=model,
                                                  index_set=branch_attrs['names'],
                                                  QLDF_MAT=branch_attrs['qldf'],
@@ -331,15 +339,15 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
                                         thermal_limits=s_max,
                                         )
 
-    ### declare the voltage min and max inequalities
-    libbus.declare_eq_vm_fdf(model=model,
-                             index_set=bus_attrs['names'],
-                             buses=buses,
-                             bus_q_loads=bus_q_loads,
-                             gens_by_bus=gens_by_bus,
-                             bus_bs_fixed_shunts=bus_bs_fixed_shunts,
-                             **v_rhs_kwargs
-                             )
+    ### declare the voltage approximation constraint
+    #libbus.declare_eq_vm_fdf(model=model,
+    #                         index_set=bus_attrs['names'],
+    #                         buses=buses,
+    #                         bus_q_loads=bus_q_loads,
+    #                         gens_by_bus=gens_by_bus,
+    #                         bus_bs_fixed_shunts=bus_bs_fixed_shunts,
+    #                         **v_rhs_kwargs
+    #                         )
 
     libgen.declare_eq_q_fdf_deviation(model=model,
                                       index_set=gen_attrs['names'],
@@ -694,8 +702,10 @@ if __name__ == '__main__':
 
     # set case and filepath
     path = os.path.dirname(__file__)
-    filename = 'pglib_opf_case3_lmbd.m'
+    #filename = 'pglib_opf_case3_lmbd.m'
     #filename = 'pglib_opf_case5_pjm.m'
+    filename = 'pglib_opf_case14_ieee.m'
+    #filename = 'pglib_opf_case57_ieee.m'
     #filename = 'pglib_opf_case500_tamu.m'
     matpower_file = os.path.join(path, '../../download/pglib-opf-master/', filename)
     md = create_ModelData(matpower_file)

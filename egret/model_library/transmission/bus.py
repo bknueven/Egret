@@ -15,6 +15,8 @@ import pyomo.environ as pe
 import egret.model_library.decl as decl
 from egret.model_library.defn import CoordinateType, ApproximationType
 from math import tan,  radians
+from pyomo.core.util import quicksum
+from pyomo.core.expr.numeric_expr import LinearExpression
 
 def declare_var_vr(model, index_set, **kwargs):
     """
@@ -523,6 +525,70 @@ def declare_ineq_vm_bus_lbub(model, index_set, buses, coordinate_type=Coordinate
                 buses[bus_name]['v_min']**2 <= m.vr[bus_name]**2 + m.vj[bus_name]**2
             m.ineq_vm_bus_ub[bus_name] = \
                 m.vr[bus_name]**2 + m.vj[bus_name]**2 <= buses[bus_name]['v_max']**2
+
+
+def get_vm_expr_vdf_approx(model, bus_name, vdf, vdf_c, rel_tol=None, abs_tol=None):
+    """
+    Create a pyomo power flow expression from VDF matrix (voltage magnitudes)
+    """
+
+    if rel_tol is None:
+        rel_tol = 0.
+    if abs_tol is None:
+        abs_tol = 0.
+
+    max_coef = 1
+    vdf_tol = max(abs_tol, rel_tol*max_coef)
+    ## NOTE: It would be easy to hold on to the 'ptdf' dictionary here,
+    ##       if we wanted to
+    m_q_nw = model.q_nw
+    ## if model.q_nw is Var, we can use LinearExpression
+    ## to build these dense constraints much faster
+    if isinstance(m_q_nw, pe.Var):
+        coef_list = list()
+        var_list = list()
+        #for bus_name, coef in PTDF.get_branch_ptdf_iterator(branch_name):
+        for bus_name, coef in vdf.items():
+            if abs(coef) >= vdf_tol:
+                coef_list.append(coef)
+                var_list.append(m_q_nw[bus_name])
+
+        lin_expr_list = [vdf_c] + coef_list + var_list
+        expr = LinearExpression(lin_expr_list)
+    else:
+        expr = quicksum( (coef*m_q_nw[bus_name] for bus_name, coef in vdf.items() if abs(coef) >= vdf_tol), start=vdf_c, linear=True)
+
+    return expr
+
+def declare_eq_vm_vdf_approx(model, index_set, VDF_MAT, VDF_CONST, rel_tol=None, abs_tol=None):
+    """
+    Create the equality constraints or expressions for voltage magnitude
+    (from VDF approximation) in the bus
+    """
+
+    m = model
+
+    con_set = decl.declare_set("_con_eq_vm_vdf_approx_set", model, index_set)
+
+    vm_is_var = isinstance(m.vm, pe.Var)
+
+    if vm_is_var:
+        m.eq_vm_bus = pe.Constraint(con_set)
+    else:
+        if not isinstance(m.vm, pe.Expression):
+            raise Exception("Unrecognized type for m.vm", m.vm.pprint())
+
+    for bus_name in con_set:
+        vdf = VDF_MAT[bus_name]
+        vdf_c = VDF_CONST[bus_name]
+        expr = \
+            get_vm_expr_vdf_approx(m, bus_name, vdf, vdf_c, rel_tol=rel_tol, abs_tol=abs_tol)
+
+        if vm_is_var:
+            m.eq_vm_bus[bus_name] = \
+                m.vm[bus_name] == expr
+        else:
+            m.vm[bus_name] = expr
 
 
 def declare_eq_vm_fdf(model, index_set, buses, bus_q_loads, gens_by_bus, bus_bs_fixed_shunts, vdf_tol = 1e-10, **rhs_kwargs):

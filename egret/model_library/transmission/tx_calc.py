@@ -296,17 +296,19 @@ def _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
 
         if approximation_type == ApproximationType.PTDF:
             x = branch['reactance']
-            b = -1/(tau*x)
+            b = -1/x
+            #b = -1/(tau*x)
         elif approximation_type == ApproximationType.PTDF_LOSSES:
-            b = calculate_susceptance(branch)/tau
+            b = calculate_susceptance(branch)
+            #b = calculate_susceptance(branch)/tau
 
         if base_point == BasePointType.FLATSTART:
-            vn = 1.
+            vn = 1 / tau
             vm = 1.
             tn = 0.
             tm = 0.
         elif base_point == BasePointType.SOLUTION: # TODO: check that we are loading the correct values (or results)
-            vn = buses[from_bus]['vm']
+            vn = buses[from_bus]['vm'] / tau
             vm = buses[to_bus]['vm']
             tn = buses[from_bus]['va']
             tm = buses[to_bus]['va']
@@ -346,13 +348,13 @@ def _calculate_J22(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
         shift = 0
         if branch['branch_type'] == 'transformer':
             tau = branch['transformer_tap_ratio']
-            shift = math.radians(branch['transformer_phase_shift'])
+            shift = -math.radians(branch['transformer_phase_shift'])
         g = calculate_conductance(branch)
         b = calculate_susceptance(branch)
         bc = branch['charging_susceptance']
 
         if base_point == BasePointType.FLATSTART:
-            vn = 1.
+            vn = 1
             vm = 1.
             tn = 0.
             tm = 0.
@@ -362,14 +364,14 @@ def _calculate_J22(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
             tn = buses[from_bus]['va']
             tm = buses[to_bus]['va']
 
-        val = -(b + bc/2)/tau**2 * vn - g/tau * vm * sin(tn - tm + shift)
+        val = -(b + bc/2) * vn / (tau**2) - g * vm * sin(tn - tm + shift)/tau
 
         idx_col = mapping_bus_to_idx[from_bus]
         row.append(idx_row)
         col.append(idx_col)
         data.append(val)
 
-        val = (b + bc/2) * vm - g/tau * vn * sin(tn - tm + shift)
+        val = (b + bc/2) * vm - g * vn * sin(tn - tm + shift)/tau
 
         idx_col = mapping_bus_to_idx[to_bus]
         row.append(idx_row)
@@ -465,14 +467,15 @@ def _calculate_L22(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
             tn = buses[from_bus]['va']
             tm = buses[to_bus]['va']
 
-        val = -2 * (b + bc/2)/tau**2 * vn + 2 * b/tau * vm * cos(tn - tm + shift)
+        val = -2 * (b + bc/2) * vn / (tau**2) + 2 * b * vm * cos(tn - tm + shift)/tau
 
         idx_col = mapping_bus_to_idx[from_bus]
         row.append(idx_row)
         col.append(idx_col)
         data.append(val)
 
-        val = -2 * (b + bc/2) * vm + 2 * b/tau * vn * cos(tn - tm + shift)
+        #HERE: changed first term to positive
+        val = -2 * (b + bc/2) * vm + 2 * b * vn * cos(tn - tm + shift)/tau
 
         idx_col = mapping_bus_to_idx[to_bus]
         row.append(idx_row)
@@ -718,8 +721,10 @@ def _calculate_qf_constant(branches,buses,index_set_branch,base_point=BasePointT
             tau = branch['transformer_tap_ratio']
             shift = math.radians(branch['transformer_phase_shift'])
         g = calculate_conductance(branch)
-        b = calculate_susceptance(branch)/tau
+        b = calculate_susceptance(branch)
         bc = branch['charging_susceptance']
+        if bc > 0:
+            print('Branch {} has bc={}'.format(branch_name,bc))
 
         if base_point == BasePointType.FLATSTART:
             vn = 1.
@@ -733,7 +738,7 @@ def _calculate_qf_constant(branches,buses,index_set_branch,base_point=BasePointT
             tm = buses[to_bus]['va']
 
         qf_constant[idx_row] = 0.5 * (b+bc/2) * (vn**2/tau**2 - vm**2) \
-                               + g/tau * vn * vm * sin(tn - tm + shift)
+                               + g * vn * vm * sin(tn - tm + shift)/tau
 
     return qf_constant
 
@@ -760,7 +765,7 @@ def _calculate_pfl_constant(branches,buses,index_set_branch,base_point=BasePoint
         if branch['branch_type'] == 'transformer':
             tau = branch['transformer_tap_ratio']
             shift = math.radians(branch['transformer_phase_shift'])
-        #    print('There is {} shift on branch {}'.format(shift,branch_name))
+            print('Branch {} has shift {} and ratio {}'.format(branch_name, branch['transformer_phase_shift'], tau))
         #else:
         #    print('There is no shift on branch {}'.format(branch_name))
         _g = calculate_conductance(branch)
@@ -821,8 +826,8 @@ def _calculate_qfl_constant(branches,buses,index_set_branch,base_point=BasePoint
             tn = buses[from_bus]['va']
             tm = buses[to_bus]['va']
 
-        qfl_constant[idx_row] = (b+bc/2) * (vn ** 2/tau**2 + vm**2) \
-                               - 2 * b/tau * vn * vm * cos(tn - tm + shift)
+        qfl_constant[idx_row] = (b+bc/2) * ((vn/tau)**2 + vm**2) \
+                               - 2 * b * vn * vm * cos(tn - tm + shift)/tau
 
     return qfl_constant
 
@@ -1047,6 +1052,7 @@ def calculate_qtdf_qldf_vdf(branches,buses,index_set_branch,index_set_bus,refere
     L = _calculate_L22(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_idx,base_point)
     Jc = _calculate_qf_constant(branches,buses,index_set_branch,base_point)
     Lc = _calculate_qfl_constant(branches,buses,index_set_branch,base_point)
+    #Lc = Lc*1.07
 
     if np.all(Jc == 0) and np.all(Lc == 0):
         return np.zeros((_len_branch, _len_bus)), np.zeros((_len_branch, _len_bus)), np.zeros((1,_len_branch))
@@ -1113,9 +1119,16 @@ def calculate_qtdf_qldf_vdf(branches,buses,index_set_branch,index_set_bus,refere
     M1 = A@Jc
     M2 = AA@Lc
     M = M1 + 0.5 * M2
-    QLDF_constant = QLDF@M + Lc
     QTDF_constant = QTDF@M + Jc
+    QLDF_constant = QLDF@M + Lc
     VDF_constant = VDF@M
+
+    VDFc1 = VDF@M1
+    VDFc2 = VDF@(0.5*M2)
+    show_me = {'vdf_c' : VDF_constant}
+    show_me.update({'c1' : VDFc1})
+    show_me.update({'c2' : VDFc2})
+    print(pd.DataFrame(show_me))
 
     return QTDF, QTDF_constant, QLDF, QLDF_constant, VDF, VDF_constant
 

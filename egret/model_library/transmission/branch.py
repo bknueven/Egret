@@ -910,12 +910,12 @@ def declare_eq_branch_midpoint_power(model, index_set, branches, coordinate_type
             -(b + bc / 2) * ((m.vm[from_bus] / tau) ** 2 + m.vm[to_bus] ** 2) + 2 * (b / tau) * m.vm[from_bus] * \
             m.vm[to_bus] * pe.cos(m.dva[branch_name])
 
-    print('~~~~~~~~~~~CCM INITIALIZATION~~~~~~~~~~~')
-    for branch_name in con_set:
-        print('pf: ', pe.value(m.pf[branch_name]))
-    for branch_name in con_set:
-        print('pfl: ', pe.value(m.pfl[branch_name]))
-    for branch_name in con_set:
-        print('qf: ', pe.value(m.qf[branch_name]))
-    for branch_name in con_set:
-        print('qfl: ', pe.value(m.qfl[branch_name]))
+    #print('~~~~~~~~~~~CCM INITIALIZATION~~~~~~~~~~~')
+    #for branch_name in con_set:
+    #    print('pf: ', pe.value(m.pf[branch_name]))
+    #for branch_name in con_set:
+    #    print('pfl: ', pe.value(m.pfl[branch_name]))
+    #for branch_name in con_set:
+    #    print('qf: ', pe.value(m.qf[branch_name]))
+    #for branch_name in con_set:
+    #    print('qfl: ', pe.value(m.qfl[branch_name]))
