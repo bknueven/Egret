@@ -560,7 +560,7 @@ def get_vm_expr_vdf_approx(model, bus_name, vdf, vdf_c, rel_tol=None, abs_tol=No
 
     return expr
 
-def declare_eq_vm_vdf_approx(model, index_set, VDF_MAT, VDF_CONST, rel_tol=None, abs_tol=None):
+def declare_eq_vm_vdf_approx(model, index_set, sensitivity, constant, rel_tol=None, abs_tol=None):
     """
     Create the equality constraints or expressions for voltage magnitude
     (from VDF approximation) in the bus
@@ -579,8 +579,8 @@ def declare_eq_vm_vdf_approx(model, index_set, VDF_MAT, VDF_CONST, rel_tol=None,
             raise Exception("Unrecognized type for m.vm", m.vm.pprint())
 
     for bus_name in con_set:
-        vdf = VDF_MAT[bus_name]
-        vdf_c = VDF_CONST[bus_name]
+        vdf = sensitivity[bus_name]
+        vdf_c = constant[bus_name]
         expr = \
             get_vm_expr_vdf_approx(m, bus_name, vdf, vdf_c, rel_tol=rel_tol, abs_tol=abs_tol)
 

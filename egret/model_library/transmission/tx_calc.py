@@ -296,19 +296,17 @@ def _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
 
         if approximation_type == ApproximationType.PTDF:
             x = branch['reactance']
-            b = -1/x
-            #b = -1/(tau*x)
+            b = -1/(tau*x)
         elif approximation_type == ApproximationType.PTDF_LOSSES:
-            b = calculate_susceptance(branch)
-            #b = calculate_susceptance(branch)/tau
+            b = calculate_susceptance(branch)/tau
 
         if base_point == BasePointType.FLATSTART:
-            vn = 1 / tau
+            vn = 1
             vm = 1.
             tn = 0.
             tm = 0.
         elif base_point == BasePointType.SOLUTION: # TODO: check that we are loading the correct values (or results)
-            vn = buses[from_bus]['vm'] / tau
+            vn = buses[from_bus]['vm']
             vm = buses[to_bus]['vm']
             tn = buses[from_bus]['va']
             tm = buses[to_bus]['va']
@@ -474,7 +472,6 @@ def _calculate_L22(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
         col.append(idx_col)
         data.append(val)
 
-        #HERE: changed first term to positive
         val = -2 * (b + bc/2) * vm + 2 * b * vn * cos(tn - tm + shift)/tau
 
         idx_col = mapping_bus_to_idx[to_bus]
@@ -827,7 +824,7 @@ def _calculate_qfl_constant(branches,buses,index_set_branch,base_point=BasePoint
             tm = buses[to_bus]['va']
 
         qfl_constant[idx_row] = (b+bc/2) * ((vn/tau)**2 + vm**2) \
-                               - 2 * b * vn * vm * cos(tn - tm + shift)/tau
+                               - 2 * b * vn * vm * cos(tn - tm + shift) / tau
 
     return qfl_constant
 
@@ -1052,7 +1049,7 @@ def calculate_qtdf_qldf_vdf(branches,buses,index_set_branch,index_set_bus,refere
     L = _calculate_L22(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_idx,base_point)
     Jc = _calculate_qf_constant(branches,buses,index_set_branch,base_point)
     Lc = _calculate_qfl_constant(branches,buses,index_set_branch,base_point)
-    #Lc = Lc*1.07
+    #Lc = Lc*1.04
 
     if np.all(Jc == 0) and np.all(Lc == 0):
         return np.zeros((_len_branch, _len_bus)), np.zeros((_len_branch, _len_bus)), np.zeros((1,_len_branch))

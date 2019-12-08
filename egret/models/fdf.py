@@ -231,43 +231,43 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
 
     libbranch.declare_eq_branch_power_ptdf_approx(model=model,
                                                index_set=branch_attrs['names'],
-                                               PTDF_MAT=branch_attrs['ptdf'],
-                                               PTDF_CONST=branch_attrs['ptdf_c'],
+                                               sensitivity=branch_attrs['ptdf'],
+                                               constant=branch_attrs['ptdf_c'],
                                                rel_tol=None,
                                                abs_tol=None
                                                )
 
     libbranch.declare_eq_branch_power_qtdf_approx(model=model,
                                                index_set=branch_attrs['names'],
-                                               QTDF_MAT=branch_attrs['qtdf'],
-                                               QTDF_CONST=branch_attrs['qtdf_c'],
+                                               sensitivity=branch_attrs['qtdf'],
+                                               constant=branch_attrs['qtdf_c'],
                                                rel_tol=None,
                                                abs_tol=None
                                                )
 
     libbranch.declare_eq_branch_loss_pldf_approx(model=model,
                                                  index_set=branch_attrs['names'],
-                                                 PLDF_MAT=branch_attrs['pldf'],
-                                                 PLDF_CONST=branch_attrs['pldf_c'],
+                                                 sensitivity=branch_attrs['pldf'],
+                                                 constant=branch_attrs['pldf_c'],
+                                                 rel_tol=None,
+                                                 abs_tol=None
+                                                 )
+
+    libbranch.declare_eq_branch_loss_qldf_approx(model=model,
+                                                 index_set=branch_attrs['names'],
+                                                 sensitivity=branch_attrs['qldf'],
+                                                 constant=branch_attrs['qldf_c'],
                                                  rel_tol=None,
                                                  abs_tol=None
                                                  )
 
     libbus.declare_eq_vm_vdf_approx(model=model,
                                     index_set=bus_attrs['names'],
-                                    VDF_MAT=bus_attrs['vdf'],
-                                    VDF_CONST=bus_attrs['vdf_c'],
+                                    sensitivity=bus_attrs['vdf'],
+                                    constant=bus_attrs['vdf_c'],
                                     rel_tol=None,
                                     abs_tol=None
                                     )
-
-    libbranch.declare_eq_branch_loss_qldf_approx(model=model,
-                                                 index_set=branch_attrs['names'],
-                                                 QLDF_MAT=branch_attrs['qldf'],
-                                                 QLDF_CONST=branch_attrs['qldf_c'],
-                                                 rel_tol=None,
-                                                 abs_tol=None
-                                                 )
 
     # * * * * *  Depreciated real/reactive power flow constraints below * * * * * #
 

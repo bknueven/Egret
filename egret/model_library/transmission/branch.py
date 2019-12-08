@@ -410,7 +410,7 @@ def get_power_flow_expr_ptdf_approx(model, branch_name, ptdf, ptdf_c, rel_tol=No
 
     return expr
 
-def declare_eq_branch_power_ptdf_approx(model, index_set, PTDF_MAT, PTDF_CONST, rel_tol=None, abs_tol=None):
+def declare_eq_branch_power_ptdf_approx(model, index_set, sensitivity, constant, rel_tol=None, abs_tol=None):
     """
     Create the equality constraints or expressions for power (from PTDF 
     approximation) in the branch
@@ -429,8 +429,8 @@ def declare_eq_branch_power_ptdf_approx(model, index_set, PTDF_MAT, PTDF_CONST, 
             raise Exception("Unrecognized type for m.pf", m.pf.pprint())
 
     for branch_name in con_set:
-        ptdf = PTDF_MAT[branch_name]
-        ptdf_c = PTDF_CONST[branch_name]
+        ptdf = sensitivity[branch_name]
+        ptdf_c = constant[branch_name]
         expr = \
             get_power_flow_expr_ptdf_approx(m, branch_name, ptdf, ptdf_c, rel_tol=rel_tol, abs_tol=abs_tol)
 
@@ -472,7 +472,7 @@ def get_branch_loss_expr_pldf_approx(model, branch_name, pldf, pldf_c, rel_tol=N
 
     return expr
 
-def declare_eq_branch_loss_pldf_approx(model, index_set, PLDF_MAT, PLDF_CONST, rel_tol=None, abs_tol=None):
+def declare_eq_branch_loss_pldf_approx(model, index_set, sensitivity, constant, rel_tol=None, abs_tol=None):
     """
     Create the equality constraints or expressions for losses (from PTDF 
     approximation) in the branch
@@ -488,8 +488,8 @@ def declare_eq_branch_loss_pldf_approx(model, index_set, PLDF_MAT, PLDF_CONST, r
             raise Exception("Unrecognized type for m.pfl", m.pfl.pprint())
 
     for branch_name in con_set:
-        pldf = PLDF_MAT[branch_name]
-        pldf_c = PLDF_CONST[branch_name]
+        pldf = sensitivity[branch_name]
+        pldf_c = constant[branch_name]
         expr = \
             get_branch_loss_expr_pldf_approx(m, branch_name, pldf, pldf_c, rel_tol=rel_tol, abs_tol=abs_tol)
 
@@ -534,7 +534,7 @@ def get_power_flow_expr_qtdf_approx(model, branch_name, qtdf, qtdf_c, rel_tol=No
 
     return expr
 
-def declare_eq_branch_power_qtdf_approx(model, index_set, QTDF_MAT, QTDF_CONST, rel_tol=None, abs_tol=None):
+def declare_eq_branch_power_qtdf_approx(model, index_set, sensitivity, constant, rel_tol=None, abs_tol=None):
     """
     Create the equality constraints or expressions for power (from QTDF
     approximation) in the branch
@@ -553,8 +553,8 @@ def declare_eq_branch_power_qtdf_approx(model, index_set, QTDF_MAT, QTDF_CONST, 
             raise Exception("Unrecognized type for m.qf", m.qf.pprint())
 
     for branch_name in con_set:
-        qtdf = QTDF_MAT[branch_name]
-        qtdf_c = QTDF_CONST[branch_name]
+        qtdf = sensitivity[branch_name]
+        qtdf_c = constant[branch_name]
         expr = \
             get_power_flow_expr_qtdf_approx(m, branch_name, qtdf, qtdf_c, rel_tol=rel_tol, abs_tol=abs_tol)
 
@@ -596,7 +596,7 @@ def get_branch_loss_expr_qldf_approx(model, branch_name, qldf, qldf_c, rel_tol=N
 
     return expr
 
-def declare_eq_branch_loss_qldf_approx(model, index_set, QLDF_MAT, QLDF_CONST, rel_tol=None, abs_tol=None):
+def declare_eq_branch_loss_qldf_approx(model, index_set, sensitivity, constant, rel_tol=None, abs_tol=None):
     """
     Create the equality constraints or expressions for losses (from QLDF
     approximation) in the branch
@@ -612,8 +612,8 @@ def declare_eq_branch_loss_qldf_approx(model, index_set, QLDF_MAT, QLDF_CONST, r
             raise Exception("Unrecognized type for m.qfl", m.qfl.pprint())
 
     for branch_name in con_set:
-        qldf = QLDF_MAT[branch_name]
-        qldf_c = QLDF_CONST[branch_name]
+        qldf = sensitivity[branch_name]
+        qldf_c = constant[branch_name]
         expr = \
             get_branch_loss_expr_qldf_approx(m, branch_name, qldf, qldf_c, rel_tol=rel_tol, abs_tol=abs_tol)
 
