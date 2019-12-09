@@ -169,7 +169,7 @@ def declare_eq_p_net_withdraw_fdf(model, index_set, buses, bus_p_loads, gens_by_
     Create a named pyomo expression for real power bus net withdraw
     """
     m = model
-    con_set = decl.declare_set('_con_eq_p_net_withdraw_fdf', model, index_set)
+    con_set = decl.declare_set('_con_eq_p_net_withdraw_at_bus', model, index_set)
 
     m.eq_p_net_withdraw_at_bus = pe.Constraint(con_set)
 
@@ -185,7 +185,7 @@ def declare_eq_q_net_withdraw_fdf(model, index_set, buses, bus_q_loads, gens_by_
     Create a named pyomo expression for reactive power bus net withdraw
     """
     m = model
-    con_set = decl.declare_set('_con_eq_q_net_withdraw_fdf', model, index_set)
+    con_set = decl.declare_set('_con_eq_q_net_withdraw_at_bus', model, index_set)
 
     m.eq_q_net_withdraw_at_bus = pe.Constraint(con_set)
 
@@ -735,6 +735,98 @@ def declare_eq_q_balance_ccm_approx(model, index_set,
 
         if bus_bs_fixed_shunts[bus_name] != 0.0:
             q_expr += bus_bs_fixed_shunts[bus_name]*(buses[bus_name]["vm"])**2
+
+        if bus_q_loads[bus_name] != 0.0: # only applies to fixed loads, otherwise may cause an error
+            q_expr -= m.ql[bus_name]
+
+        if rhs_kwargs:
+            for idx, val in rhs_kwargs.items():
+                if idx == 'include_feasibility_slack_pos':
+                    q_expr -= eval("m." + val)[bus_name]
+                if idx == 'include_feasibility_slack_neg':
+                    q_expr += eval("m." + val)[bus_name]
+
+        for gen_name in gens_by_bus[bus_name]:
+            q_expr += m.qg[gen_name]
+
+        m.eq_q_balance[bus_name] = \
+            q_expr == 0.0
+
+
+def declare_eq_p_balance_lccm_approx(model, index_set,
+                                   buses,
+                                   bus_p_loads,
+                                   gens_by_bus,
+                                   bus_gs_fixed_shunts,
+                                   inlet_branches_by_bus,
+                                   outlet_branches_by_bus,
+                                   **rhs_kwargs):
+    """
+    Create the equality constraints for the real power balance
+    at a bus using the variables for real power flows, respectively.
+
+    NOTE: Equation build orientates constants to the RHS in order to compute the correct dual variable sign
+    """
+    m = model
+    con_set = decl.declare_set('_con_eq_p_balance', model, index_set)
+
+    m.eq_p_balance = pe.Constraint(con_set)
+
+    for bus_name in con_set:
+        p_expr = -0.5*sum([m.pfl[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
+        p_expr -= 0.5*sum([m.pfl[branch_name] for branch_name in outlet_branches_by_bus[bus_name]])
+        p_expr -= sum([m.pf[branch_name] for branch_name in outlet_branches_by_bus[bus_name]])
+        p_expr += sum([m.pf[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
+
+        if bus_gs_fixed_shunts[bus_name] != 0.0:
+            bus=buses[bus_name]
+            p_expr -= bus_gs_fixed_shunts[bus_name] * ( 2 * bus['vm'] * m.vm[bus_name] - bus['vm']**2 )
+
+        if bus_p_loads[bus_name] != 0.0: # only applies to fixed loads, otherwise may cause an error
+            p_expr -= m.pl[bus_name]
+
+        if rhs_kwargs:
+            for idx, val in rhs_kwargs.items():
+                if idx == 'include_feasibility_slack_pos':
+                    p_expr -= eval("m." + val)[bus_name]
+                if idx == 'include_feasibility_slack_neg':
+                    p_expr += eval("m." + val)[bus_name]
+
+        for gen_name in gens_by_bus[bus_name]:
+            p_expr += m.pg[gen_name]
+
+        m.eq_p_balance[bus_name] = \
+            p_expr == 0.0
+
+
+def declare_eq_q_balance_lccm_approx(model, index_set,
+                                   buses,
+                                   bus_q_loads,
+                                   gens_by_bus,
+                                   bus_bs_fixed_shunts,
+                                   inlet_branches_by_bus,
+                                   outlet_branches_by_bus,
+                                   **rhs_kwargs):
+    """
+    Create the equality constraints for the real power balance
+    at a bus using the variables for real power flows, respectively.
+
+    NOTE: Equation build orientates constants to the RHS in order to compute the correct dual variable sign
+    """
+    m = model
+    con_set = decl.declare_set('_con_eq_q_balance', model, index_set)
+
+    m.eq_q_balance = pe.Constraint(con_set)
+
+    for bus_name in con_set:
+        q_expr = -0.5*sum([m.qfl[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
+        q_expr -= 0.5*sum([m.qfl[branch_name] for branch_name in outlet_branches_by_bus[bus_name]])
+        q_expr -= sum([m.qf[branch_name] for branch_name in outlet_branches_by_bus[bus_name]])
+        q_expr += sum([m.qf[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
+
+        if bus_bs_fixed_shunts[bus_name] != 0.0:
+            bus = buses[bus_name]
+            q_expr += bus_bs_fixed_shunts[bus_name] * ( 2 * bus['vm'] * m.vm[bus_name] - bus['vm']**2 )
 
         if bus_q_loads[bus_name] != 0.0: # only applies to fixed loads, otherwise may cause an error
             q_expr -= m.ql[bus_name]

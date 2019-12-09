@@ -623,6 +623,244 @@ def declare_eq_branch_loss_qldf_approx(model, index_set, sensitivity, constant, 
         else:
             m.qfl[branch_name] = expr
 
+def get_expr_branch_pf_lccm_approx(model, branch_name, pf_sens, pf_const, rel_tol=None, abs_tol=None):
+    """
+    Create a pyomo power flow expression from CCM sensitivity
+    """
+
+    if rel_tol is None:
+        rel_tol = 0.
+    if abs_tol is None:
+        abs_tol = 0.
+
+    max_coef = 1
+    sens_tol = max(abs_tol, rel_tol*max_coef)
+    ## NOTE: It would be easy to hold on to the 'ptdf' dictionary here,
+    ##       if we wanted to
+    m_va = model.va
+    ## if model.va is Var, we can use LinearExpression
+    ## LinearExpression may not have advantage for sparse LCCM constraints, but will be implemented analogously to FDF
+    if isinstance(m_va, pe.Var):
+        coef_list = list()
+        var_list = list()
+        for bus_name, coef in pf_sens.items():
+            if abs(coef) >= sens_tol:
+                coef_list.append(coef)
+                var_list.append(m_va[bus_name])
+
+        lin_expr_list = [pf_const] + coef_list + var_list
+        expr = LinearExpression(lin_expr_list)
+    else:
+        expr = quicksum( (coef*m_va[bus_name] for bus_name, coef in pf_sens.items() if abs(coef) >= sens_tol), start=pf_const, linear=True)
+
+    return expr
+
+def declare_eq_branch_pf_lccm_approx(model, index_set, sensitivity, constant, rel_tol=None, abs_tol=None):
+    """
+    Create the equality constraints or expressions for power (from LCCM approximation) in the branch
+    """
+
+    m = model
+
+    con_set = decl.declare_set("_con_eq_branch_pf_lccm_approx_set", model, index_set)
+
+    pf_is_var = isinstance(m.pf, pe.Var)
+
+    if pf_is_var:
+        m.eq_pf_branch = pe.Constraint(con_set)
+    else:
+        if not isinstance(m.pf, pe.Expression):
+            raise Exception("Unrecognized type for m.pf", m.pf.pprint())
+
+    for branch_name in con_set:
+        pf_sens = sensitivity[branch_name]
+        pf_const = constant[branch_name]
+        expr = \
+            get_expr_branch_pf_lccm_approx(m, branch_name, pf_sens, pf_const, rel_tol=rel_tol, abs_tol=abs_tol)
+
+        if pf_is_var:
+            m.eq_pf_branch[branch_name] = \
+                m.pf[branch_name] == expr
+        else:
+            m.pf[branch_name] = expr
+
+def get_expr_branch_pfl_lccm_approx(model, branch_name, pfl_sens, pfl_const, rel_tol=None, abs_tol=None):
+    """
+    Create a pyomo power flow loss expression from CCM sensitivity
+    """
+    if rel_tol is None:
+        rel_tol = 0.
+    if abs_tol is None:
+        abs_tol = 0.
+
+    max_coef = 1
+    sens_tol = max(abs_tol, rel_tol*max_coef)
+    ## NOTE: It would be easy to hold on to the 'ptdf' dictionary here,
+    ##       if we wanted to
+    m_va = model.va
+    ## if model.va is Var, we can use LinearExpression
+    ## LinearExpression may not have advantage for sparse LCCM constraints, but will be implemented analogously to FDF
+    if isinstance(m_va, pe.Var):
+        coef_list = list()
+        var_list = list()
+        for bus_name, coef in pfl_sens.items():
+            if abs(coef) >= sens_tol:
+                coef_list.append(coef)
+                var_list.append(m_va[bus_name])
+
+        lin_expr_list = [pfl_const] + coef_list + var_list
+        expr = LinearExpression(lin_expr_list)
+    else:
+        expr = quicksum( (coef*m_va[bus_name] for bus_name, coef in pfl_sens.items() if abs(coef) >= sens_tol), start=pfl_const, linear=True)
+
+    return expr
+
+def declare_eq_branch_pfl_lccm_approx(model, index_set, sensitivity, constant, rel_tol=None, abs_tol=None):
+    """
+    Create the equality constraints or expressions for losses (from LCCM approximation) in the branch
+    """
+    m = model
+
+    con_set = decl.declare_set("_con_eq_branch_pfl_lccm_approx_set", model, index_set)
+    pfl_is_var = isinstance(m.pfl, pe.Var)
+    if pfl_is_var:
+        m.eq_pfl_branch = pe.Constraint(con_set)
+    else:
+        if not isinstance(m.pfl, pe.Expression):
+            raise Exception("Unrecognized type for m.pfl", m.pfl.pprint())
+
+    for branch_name in con_set:
+        pfl_sens = sensitivity[branch_name]
+        pfl_const = constant[branch_name]
+        expr = \
+            get_expr_branch_pfl_lccm_approx(m, branch_name, pfl_sens, pfl_const, rel_tol=rel_tol, abs_tol=abs_tol)
+
+        if pfl_is_var:
+            m.eq_pfl_branch[branch_name] = \
+                m.pfl[branch_name] == expr
+        else:
+            m.pfl[branch_name] = expr
+
+def get_expr_branch_qf_lccm_approx(model, branch_name, qf_sens, qf_const, rel_tol=None, abs_tol=None):
+    """
+    Create a pyomo power flow expression from CCM sensitivity
+    """
+
+    if rel_tol is None:
+        rel_tol = 0.
+    if abs_tol is None:
+        abs_tol = 0.
+
+    max_coef = 1
+    sens_tol = max(abs_tol, rel_tol*max_coef)
+    ## NOTE: It would be easy to hold on to the 'ptdf' dictionary here,
+    ##       if we wanted to
+    m_vm = model.vm
+    ## if model.vm is Var, we can use LinearExpression
+    ## LinearExpression may not have advantage for sparse LCCM constraints, but will be implemented analogously to FDF
+    if isinstance(m_vm, pe.Var):
+        coef_list = list()
+        var_list = list()
+        #for bus_name, coef in PTDF.get_branch_ptdf_iterator(branch_name):
+        for bus_name, coef in qf_sens.items():
+            if abs(coef) >= sens_tol:
+                coef_list.append(coef)
+                var_list.append(m_vm[bus_name])
+
+        lin_expr_list = [qf_sens] + coef_list + var_list
+        expr = LinearExpression(lin_expr_list)
+    else:
+        expr = quicksum( (coef*m_vm[bus_name] for bus_name, coef in qf_sens.items() if abs(coef) >= sens_tol), start=qf_const, linear=True)
+
+    return expr
+
+def declare_eq_branch_qf_lccm_approx(model, index_set, sensitivity, constant, rel_tol=None, abs_tol=None):
+    """
+    Create the equality constraints or expressions for power (from LCCM approximation) in the branch
+    """
+
+    m = model
+
+    con_set = decl.declare_set("_con_eq_branch_qf_lccm_approx_set", model, index_set)
+
+    qf_is_var = isinstance(m.qf, pe.Var)
+
+    if qf_is_var:
+        m.eq_qf_branch = pe.Constraint(con_set)
+    else:
+        if not isinstance(m.qf, pe.Expression):
+            raise Exception("Unrecognized type for m.qf", m.qf.pprint())
+
+    for branch_name in con_set:
+        qf_sens = sensitivity[branch_name]
+        qf_const = constant[branch_name]
+        expr = \
+            get_expr_branch_qf_lccm_approx(m, branch_name, qf_sens, qf_const, rel_tol=rel_tol, abs_tol=abs_tol)
+
+        if qf_is_var:
+            m.eq_qf_branch[branch_name] = \
+                m.qf[branch_name] == expr
+        else:
+            m.qf[branch_name] = expr
+
+def get_expr_branch_qfl_lccm_approx(model, branch_name, qfl_sens, qfl_const, rel_tol=None, abs_tol=None):
+    """
+    Create a pyomo power flow loss expression from CCM sensitivity
+    """
+    if rel_tol is None:
+        rel_tol = 0.
+    if abs_tol is None:
+        abs_tol = 0.
+
+    max_coef = 1
+    sens_tol = max(abs_tol, rel_tol*max_coef)
+    ## NOTE: It would be easy to hold on to the 'qldf' dictionary here,
+    ##       if we wanted to
+    m_vm = model.vm
+    ## if model.vm is Var, we can use LinearExpression
+    ## LinearExpression may not have advantage for sparse LCCM constraints, but will be implemented analogously to FDF
+    if isinstance(m_vm, pe.Var):
+        coef_list = list()
+        var_list = list()
+        for bus_name, coef in qfl_sens.items():
+            if abs(coef) >= sens_tol:
+                coef_list.append(coef)
+                var_list.append(m_vm[bus_name])
+
+        lin_expr_list = [qfl_const] + coef_list + var_list
+        expr = LinearExpression(lin_expr_list)
+    else:
+        expr = quicksum( (coef*m_vm[bus_name] for bus_name, coef in qfl_sens.items() if abs(coef) >= sens_tol), start=qfl_const, linear=True)
+
+    return expr
+
+def declare_eq_branch_qfl_lccm_approx(model, index_set, sensitivity, constant, rel_tol=None, abs_tol=None):
+    """
+    Create the equality constraints or expressions for losses (from LCCM approximation) in the branch
+    """
+    m = model
+
+    con_set = decl.declare_set("_con_eq_branch_qfl_lccm_approx_set", model, index_set)
+    qfl_is_var = isinstance(m.qfl, pe.Var)
+    if qfl_is_var:
+        m.eq_qfl_branch = pe.Constraint(con_set)
+    else:
+        if not isinstance(m.qfl, pe.Expression):
+            raise Exception("Unrecognized type for m.qfl", m.qfl.pprint())
+
+    for branch_name in con_set:
+        qfl_sens = sensitivity[branch_name]
+        qfl_const = constant[branch_name]
+        expr = \
+            get_expr_branch_qfl_lccm_approx(m, branch_name, qfl_sens, qfl_const, rel_tol=rel_tol, abs_tol=abs_tol)
+
+        if qfl_is_var:
+            m.eq_qfl_branch[branch_name] = \
+                m.qfl[branch_name] == expr
+        else:
+            m.qfl[branch_name] = expr
+
+
 def declare_eq_branch_power_qtdf_approx_depreciated(model, index_set, branches, buses, bus_q_loads, gens_by_bus,
                                         bus_bs_fixed_shunts, qtdf_tol=1e-10):
     """

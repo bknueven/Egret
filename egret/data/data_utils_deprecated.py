@@ -105,3 +105,45 @@ def create_dicts_of_fdf(md, base_point=BasePointType.SOLUTION):
                             phi_loss_q_to[idx, i] != 0.}
         bus['phi_loss_q_to'] = _row_phi_loss_q_to
 
+
+def create_dicts_of_lccm(md, base_point=BasePointType.SOLUTION):
+    branches = dict(md.elements(element_type='branch'))
+    buses = dict(md.elements(element_type='bus'))
+    branch_attrs = md.attributes(element_type='branch')
+    bus_attrs = md.attributes(element_type='bus')
+
+    reference_bus = md.data['system']['reference_bus']
+    Ft, ft_c, Fv, fv_c = tx_calc.calculate_lccm_flow_sensitivies(branches, buses, branch_attrs['names'], bus_attrs['names'],
+                                                    reference_bus, base_point)
+    Lt, lt_c, Lv, lv_c = tx_calc.calculate_lccm_loss_sensitivies(branches, buses, branch_attrs['names'], bus_attrs['names'],
+                                                    reference_bus, base_point)
+
+    _len_branch = len(branch_attrs['names'])
+    _mapping_branch = {i: branch_attrs['names'][i] for i in list(range(0, _len_branch))}
+
+    _len_bus = len(bus_attrs['names'])
+    _mapping_bus = {i: bus_attrs['names'][i] for i in list(range(0, _len_bus))}
+
+    for idx, branch_name in _mapping_branch.items():
+        branch = md.data['elements']['branch'][branch_name]
+        _row_Ft = {bus_attrs['names'][i]: Ft[idx, i] for i in list(range(0, _len_bus))}
+        branch['Ft'] = _row_Ft
+
+        _row_Lt = {bus_attrs['names'][i]: Lt[idx, i] for i in list(range(0, _len_bus))}
+        branch['Lt'] = _row_Lt
+
+        branch['ft_c'] = ft_c[idx]
+
+        branch['lt_c'] = lt_c[idx]
+
+        _row_Fv = {bus_attrs['names'][i]: Fv[idx, i] for i in list(range(0, _len_bus))}
+        branch['Fv'] = _row_Fv
+
+        _row_Lv = {bus_attrs['names'][i]: Lv[idx, i] for i in list(range(0, _len_bus))}
+        branch['Lv'] = _row_Lv
+
+        branch['fv_c'] = fv_c[idx]
+
+        branch['lv_c'] = lv_c[idx]
+
+

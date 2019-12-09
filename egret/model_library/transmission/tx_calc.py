@@ -903,6 +903,90 @@ def calculate_ptdf(branches,buses,index_set_branch,index_set_bus,reference_bus,b
     return PTDF
 
 
+def calculate_lccm_flow_sensitivies(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.SOLUTION,mapping_bus_to_idx=None):
+    """
+    Calculates the following:
+        Ft:     real power flow sensitivity to voltage angle theta
+        ft_c:   real power flow constant
+        Fv:     reactive power flow sensitivity to voltage magnitude
+        fv_c:   reactive power flow constant
+    Parameters
+    ----------
+    branches: dict{}
+        The dictionary of branches for the test case
+    buses: dict{}
+        The dictionary of buses for the test case
+    index_set_branch: list
+        The list of keys for branches for the test case
+    index_set_bus: list
+        The list of keys for buses for the test case
+    reference_bus: key value
+        The reference bus key value
+    base_point: egret.model_library_defn.BasePointType
+        The base-point type for calculating sensitivities
+    mapping_bus_to_idx: dict
+        A map from bus names to indices for matrix construction. If None,
+        will be inferred from index_set_bus.
+    """
+    _len_bus = len(index_set_bus)
+
+    if mapping_bus_to_idx is None:
+        mapping_bus_to_idx = {bus_n: i for i, bus_n in enumerate(index_set_bus)}
+
+    _len_branch = len(index_set_branch)
+
+    _ref_bus_idx = mapping_bus_to_idx[reference_bus]
+
+    Ft = _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_idx,base_point,approximation_type=ApproximationType.PTDF_LOSSES)
+    Fv = _calculate_J22(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_idx,base_point)
+    ft_c = _calculate_pf_constant(branches,buses,index_set_branch,base_point)
+    fv_c = _calculate_qf_constant(branches,buses,index_set_branch,base_point)
+
+    return Ft, ft_c, Fv, fv_c
+
+
+def calculate_lccm_loss_sensitivies(branches, buses, index_set_branch, index_set_bus, reference_bus,
+                                    base_point=BasePointType.SOLUTION, mapping_bus_to_idx=None):
+    """
+    Calculates the following:
+        Lt:     real power loss sensitivity to voltage angle theta
+        lt_c:   real power loss constant
+        Lv:     reactive power loss sensitivity to voltage magnitude
+        lv_c:   reactive power loss constant
+    Parameters
+    ----------
+    branches: dict{}
+        The dictionary of branches for the test case
+    buses: dict{}
+        The dictionary of buses for the test case
+    index_set_branch: list
+        The list of keys for branches for the test case
+    index_set_bus: list
+        The list of keys for buses for the test case
+    reference_bus: key value
+        The reference bus key value
+    base_point: egret.model_library_defn.BasePointType
+        The base-point type for calculating sensitivities
+    mapping_bus_to_idx: dict
+        A map from bus names to indices for matrix construction. If None,
+        will be inferred from index_set_bus.
+    """
+    _len_bus = len(index_set_bus)
+
+    if mapping_bus_to_idx is None:
+        mapping_bus_to_idx = {bus_n: i for i, bus_n in enumerate(index_set_bus)}
+
+    _len_branch = len(index_set_branch)
+
+    _ref_bus_idx = mapping_bus_to_idx[reference_bus]
+
+    Lt = _calculate_L11(branches, buses, index_set_branch, index_set_bus, mapping_bus_to_idx, base_point)
+    Lv = _calculate_L22(branches, buses, index_set_branch, index_set_bus, mapping_bus_to_idx, base_point)
+    lt_c = _calculate_pfl_constant(branches, buses, index_set_branch, base_point)
+    lv_c = _calculate_qfl_constant(branches, buses, index_set_branch, base_point)
+
+    return Lt, lt_c, Lv, lv_c
+
 def calculate_ptdf_pldf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.SOLUTION,sparse_index_set_branch=None,mapping_bus_to_idx=None):
     """
     Calculates the following:
