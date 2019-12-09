@@ -127,7 +127,7 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
 
     ### declare the polar voltages
     libbus.declare_var_vm(model, bus_attrs['names'], initialize=bus_attrs['vm'],
-                          bounds=zip_items(bus_attrs['v_min'], bus_attrs['v_max'])
+                          #bounds=zip_items(bus_attrs['v_min'], bus_attrs['v_max'])
                           )
 
     ### include the feasibility slack for the bus balances
@@ -269,48 +269,6 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
                                     abs_tol=None
                                     )
 
-    # * * * * *  Depreciated real/reactive power flow constraints below * * * * * #
-
-    ### declare the branch real power flow approximation constraints
-    #libbranch_deprecated.declare_eq_branch_power_ptdf_approx(model=model,
-    #                                              index_set=branch_attrs['names'],
-    #                                              branches=branches,
-    #                                              buses=buses,
-    #                                              bus_p_loads=bus_p_loads,
-    #                                              gens_by_bus=gens_by_bus,
-    #                                              bus_gs_fixed_shunts=bus_gs_fixed_shunts,
-    #                                              include_constant_term=True, #True
-    #                                              approximation_type=ApproximationType.FDF #FDF
-    #                                              )
-    ### declare the branch real power loss approximation constraints
-    #libbranch_deprecated.declare_eq_branch_loss_ptdf_approx(model=model,
-    #                                              index_set=branch_attrs['names'],
-    #                                              branches=branches,
-    #                                              buses=buses,
-    #                                              bus_p_loads=bus_p_loads,
-    #                                              gens_by_bus=gens_by_bus,
-    #                                              bus_gs_fixed_shunts=bus_gs_fixed_shunts,
-    #                                              include_constant_term=True
-    #                                              )
-    ### declare the branch reactive power flow approximation constraints
-    #libbranch.declare_eq_branch_power_qtdf_approx_depreciated(model=model,
-    #                                              index_set=branch_attrs['names'],
-    #                                              branches=branches,
-    #                                              buses=buses,
-    #                                              bus_q_loads=bus_q_loads,
-    #                                              gens_by_bus=gens_by_bus,
-    #                                              bus_bs_fixed_shunts=bus_bs_fixed_shunts
-    #                                              )
-    ### declare the branch reactive power loss approximation constraints
-    #libbranch.declare_eq_branch_loss_qtdf_approx_depreciated(model=model,
-    #                                              index_set=branch_attrs['names'],
-    #                                              branches=branches,
-    #                                              buses=buses,
-    #                                              bus_q_loads=bus_q_loads,
-    #                                              gens_by_bus=gens_by_bus,
-    #                                              bus_bs_fixed_shunts=bus_bs_fixed_shunts
-    #                                              )
-
     ### declare the p balance
     libbus.declare_eq_p_balance_fdf(model=model,
                                     index_set=bus_attrs['names'],
@@ -333,21 +291,12 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
                                     **q_rhs_kwargs
                                     )
 
+    #TODO: check FDF thermal limits formulation
     ### declare the real power flow limits
     libbranch.declare_fdf_thermal_limit(model=model,
                                         index_set=branch_attrs['names'],
                                         thermal_limits=s_max,
                                         )
-
-    ### declare the voltage approximation constraint
-    #libbus.declare_eq_vm_fdf(model=model,
-    #                         index_set=bus_attrs['names'],
-    #                         buses=buses,
-    #                         bus_q_loads=bus_q_loads,
-    #                         gens_by_bus=gens_by_bus,
-    #                         bus_bs_fixed_shunts=bus_bs_fixed_shunts,
-    #                         **v_rhs_kwargs
-    #                         )
 
     libgen.declare_eq_q_fdf_deviation(model=model,
                                       index_set=gen_attrs['names'],
@@ -704,8 +653,10 @@ if __name__ == '__main__':
     path = os.path.dirname(__file__)
     #filename = 'pglib_opf_case3_lmbd.m'
     #filename = 'pglib_opf_case5_pjm.m'
-    filename = 'pglib_opf_case14_ieee.m'
+    #filename = 'pglib_opf_case14_ieee.m'
     #filename = 'pglib_opf_case57_ieee.m'
+    #filename = 'pglib_opf_case118_ieee.m'
+    filename = 'pglib_opf_case300_ieee.m'
     #filename = 'pglib_opf_case500_tamu.m'
     matpower_file = os.path.join(path, '../../download/pglib-opf-master/', filename)
     md = create_ModelData(matpower_file)

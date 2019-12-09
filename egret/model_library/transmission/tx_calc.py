@@ -293,6 +293,7 @@ def _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
         if branch['branch_type'] == 'transformer':
             tau = branch['transformer_tap_ratio']
             shift = math.radians(branch['transformer_phase_shift'])
+            #print('Branch {} has shift {} and tap ratio {}'.format(branch_name,shift,tau))
 
         if approximation_type == ApproximationType.PTDF:
             x = branch['reactance']
@@ -450,7 +451,7 @@ def _calculate_L22(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
         shift = 0
         if branch['branch_type'] == 'transformer':
             tau = branch['transformer_tap_ratio']
-            shift = math.radians(branch['transformer_phase_shift'])
+            shift = -math.radians(branch['transformer_phase_shift'])
         b = calculate_susceptance(branch)
         bc = branch['charging_susceptance']
 
@@ -716,12 +717,10 @@ def _calculate_qf_constant(branches,buses,index_set_branch,base_point=BasePointT
         shift = 0.0
         if branch['branch_type'] == 'transformer':
             tau = branch['transformer_tap_ratio']
-            shift = math.radians(branch['transformer_phase_shift'])
+            shift = -math.radians(branch['transformer_phase_shift'])
         g = calculate_conductance(branch)
         b = calculate_susceptance(branch)
         bc = branch['charging_susceptance']
-        if bc > 0:
-            print('Branch {} has bc={}'.format(branch_name,bc))
 
         if base_point == BasePointType.FLATSTART:
             vn = 1.
@@ -762,9 +761,6 @@ def _calculate_pfl_constant(branches,buses,index_set_branch,base_point=BasePoint
         if branch['branch_type'] == 'transformer':
             tau = branch['transformer_tap_ratio']
             shift = math.radians(branch['transformer_phase_shift'])
-            print('Branch {} has shift {} and ratio {}'.format(branch_name, branch['transformer_phase_shift'], tau))
-        #else:
-        #    print('There is no shift on branch {}'.format(branch_name))
         _g = calculate_conductance(branch)
         g = _g/tau
         g2 = _g/tau**2
@@ -808,7 +804,7 @@ def _calculate_qfl_constant(branches,buses,index_set_branch,base_point=BasePoint
         shift = 0.0
         if branch['branch_type'] == 'transformer':
             tau = branch['transformer_tap_ratio']
-            shift = math.radians(branch['transformer_phase_shift'])
+            shift = -math.radians(branch['transformer_phase_shift'])
         b = calculate_susceptance(branch)
         bc = branch['charging_susceptance']
 
@@ -1204,12 +1200,12 @@ def calculate_qtdf_qldf_vdf(branches,buses,index_set_branch,index_set_bus,refere
     QLDF_constant = QLDF@M + Lc
     VDF_constant = VDF@M
 
-    VDFc1 = VDF@M1
-    VDFc2 = VDF@(0.5*M2)
-    show_me = {'vdf_c' : VDF_constant}
-    show_me.update({'c1' : VDFc1})
-    show_me.update({'c2' : VDFc2})
-    print(pd.DataFrame(show_me))
+    #VDFc1 = VDF@M1
+    #VDFc2 = VDF@(0.5*M2)
+    #show_me = {'vdf_c' : VDF_constant}
+    #show_me.update({'c1' : VDFc1})
+    #show_me.update({'c2' : VDFc2})
+    #print(pd.DataFrame(show_me))
 
     return QTDF, QTDF_constant, QLDF, QLDF_constant, VDF, VDF_constant
 
