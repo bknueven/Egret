@@ -164,6 +164,37 @@ def declare_eq_q_net_withdraw_at_bus(model, index_set, bus_q_loads, gens_by_bus,
                                                       + (m.ql[b] if bus_q_loads[b] != 0.0 else 0.0)
                                                       - sum(m.qg[g] for g in gens_by_bus[b]))
 
+def declare_eq_p_net_withdraw_fdf(model, index_set, buses, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts ):
+    """
+    Create a named pyomo expression for real power bus net withdraw
+    """
+    m = model
+    con_set = decl.declare_set('_con_eq_p_net_withdraw_fdf', model, index_set)
+
+    m.eq_p_net_withdraw_at_bus = pe.Constraint(con_set)
+
+    for b in index_set:
+        bus = buses[b]
+        m.eq_p_net_withdraw_at_bus[b] = m.p_nw[b] == ( bus_gs_fixed_shunts[b] * ( 2 * bus['vm'] * m.vm[b] - bus['vm']**2)
+                                                    + ( m.pl[b] if bus_p_loads[b] != 0.0 else 0.0 )
+                                                    - sum( m.pg[g] for g in gens_by_bus[b] ) )
+
+
+def declare_eq_q_net_withdraw_fdf(model, index_set, buses, bus_q_loads, gens_by_bus, bus_bs_fixed_shunts):
+    """
+    Create a named pyomo expression for reactive power bus net withdraw
+    """
+    m = model
+    con_set = decl.declare_set('_con_eq_q_net_withdraw_fdf', model, index_set)
+
+    m.eq_q_net_withdraw_at_bus = pe.Constraint(con_set)
+
+    for b in index_set:
+        bus = buses[b]
+        m.eq_q_net_withdraw_at_bus[b] = m.q_nw[b] == (-bus_bs_fixed_shunts[b] * ( 2 * bus['vm'] * m.vm[b] - bus['vm']**2)
+                                                      + (m.ql[b] if bus_q_loads[b] != 0.0 else 0.0)
+                                                      - sum(m.qg[g] for g in gens_by_bus[b]))
+
 
 def declare_eq_ref_bus_nonzero(model, ref_angle, ref_bus):
     """

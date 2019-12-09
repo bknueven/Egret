@@ -226,8 +226,8 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
 #                              )
 
     ### declare net withdrawal definition constraints
-    libbus.declare_eq_p_net_withdraw_at_bus(model,bus_attrs['names'],bus_p_loads,gens_by_bus,bus_gs_fixed_shunts)
-    libbus.declare_eq_q_net_withdraw_at_bus(model,bus_attrs['names'],bus_q_loads,gens_by_bus,bus_bs_fixed_shunts)
+    libbus.declare_eq_p_net_withdraw_fdf(model,bus_attrs['names'],buses,bus_p_loads,gens_by_bus,bus_gs_fixed_shunts)
+    libbus.declare_eq_q_net_withdraw_fdf(model,bus_attrs['names'],buses,bus_q_loads,gens_by_bus,bus_bs_fixed_shunts)
 
     libbranch.declare_eq_branch_power_ptdf_approx(model=model,
                                                index_set=branch_attrs['names'],
