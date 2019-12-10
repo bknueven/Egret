@@ -8,7 +8,7 @@
 #  ___________________________________________________________________________
 
 '''
-acopf tester
+fdf tester
 '''
 import os
 import math
@@ -23,7 +23,29 @@ from os import listdir
 from os.path import isfile, join
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
-test_cases = [join('../../../download/pglib-opf-master/', f) for f in listdir('../../../download/pglib-opf-master/') if isfile(join('../../../download/pglib-opf-master/', f)) and f.endswith('.m')]
+#test_cases = [join('../../../download/pglib-opf-master/', f) for f in listdir('../../../download/pglib-opf-master/') if isfile(join('../../../download/pglib-opf-master/', f)) and f.endswith('.m')]
+case_names = ['pglib_opf_case3_lmbd.m',
+              'pglib_opf_case5_pjm.m',
+              'pglib_opf_case14_ieee.m',
+              'pglib_opf_case24_ieee_rts.m',
+              'pglib_opf_case30_as.m',
+              'pglib_opf_case30_fsr,m',
+              'pglib_opf_case30_ieee.m',
+              'pglib_opf_case39_epri.m',
+              'pglib_opf_case57_ieee.m',
+              'pglib_opf_case73_ieee_rts.m',
+              'pglib_opf_case89_pegase.m',
+              'pglib_opf_case118_ieee.m',
+              'pglib_opf_case162_ieee_dtc.m',
+              'pglib_opf_case179_goc.m',
+              'pglib_opf_case200_tamu.m',
+              'pglib_opf_case240_pserc.m',
+              'pglib_opf_case300_ieee.m',
+              'pglib_opf_case500_tamu.m',
+              'pglib_opf_case588_sdet.m',
+              ]
+test_cases = [os.path.join(current_dir, 'transmission_test_instances', 'pglib-opf-master', '{}.m'.format(i)) for i in case_names]
+
 
 
 class TestFDF(unittest.TestCase):
@@ -50,7 +72,7 @@ class TestFDF(unittest.TestCase):
         md_acopf.write_to_json(filename)
 
         md_fdf, m, results = solve_fdf(md_acopf, "gurobi", return_model=True, return_results=True, solver_tee=False, **kwargs)
-        filename = md.data['system']['model_name'] + '_fdf'
+        filename = md_fdf.data['system']['model_name'] + '_fdf'
         md_fdf.write_to_json(filename)
 
         self.assertTrue(True)

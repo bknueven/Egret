@@ -179,6 +179,9 @@ def declare_eq_p_net_withdraw_fdf(model, index_set, buses, bus_p_loads, gens_by_
                                                     + ( m.pl[b] if bus_p_loads[b] != 0.0 else 0.0 )
                                                     - sum( m.pg[g] for g in gens_by_bus[b] ) )
 
+        #if bus_gs_fixed_shunts[b] != 0:
+        #    print('Bus {} has shunt conductance {}'.format(b,bus_gs_fixed_shunts[b]))
+
 
 def declare_eq_q_net_withdraw_fdf(model, index_set, buses, bus_q_loads, gens_by_bus, bus_bs_fixed_shunts):
     """
@@ -194,6 +197,9 @@ def declare_eq_q_net_withdraw_fdf(model, index_set, buses, bus_q_loads, gens_by_
         m.eq_q_net_withdraw_at_bus[b] = m.q_nw[b] == (-bus_bs_fixed_shunts[b] * ( 2 * bus['vm'] * m.vm[b] - bus['vm']**2)
                                                       + (m.ql[b] if bus_q_loads[b] != 0.0 else 0.0)
                                                       - sum(m.qg[g] for g in gens_by_bus[b]))
+
+        #if bus_bs_fixed_shunts[b] != 0:
+        #    print('Bus {} has shunt susceptance {}'.format(b,bus_bs_fixed_shunts[b]))
 
 
 def declare_eq_ref_bus_nonzero(model, ref_angle, ref_bus):
@@ -279,6 +285,7 @@ def declare_eq_p_balance_fdf(model, index_set, buses, bus_p_loads, gens_by_bus, 
     p_expr = sum(m.pg[gen_name] for bus_name in index_set for gen_name in gens_by_bus[bus_name])
     p_expr -= sum(m.pl[bus_name] for bus_name in index_set if bus_p_loads[bus_name] is not None)
     # p_expr -= sum(bus_gs_fixed_shunts[bus_name] for bus_name in index_set if bus_gs_fixed_shunts[bus_name] != 0.0)
+    #p_expr -= sum(bus_gs_fixed_shunts[bus_name] * buses[bus_name]["vm"] ** 2 for bus_name in index_set if bus_gs_fixed_shunts[bus_name] != 0.0)
     p_expr -= sum(bus_gs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2) for bus_name in index_set if bus_gs_fixed_shunts[bus_name] != 0.0)
 
     if rhs_kwargs:

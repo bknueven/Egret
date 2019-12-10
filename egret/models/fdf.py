@@ -641,6 +641,23 @@ def solve_fdf(model_data,
         return md, results
     return md
 
+def compare_results(results, c1, c2, tol=1e-6):
+    import numpy as np
+    c1_results = results.get(c1)
+    c2_results = results.get(c2)
+    c1_array = np.fromiter(c1_results.values(), dtype=float)
+    c2_array = np.fromiter(c2_results.values(), dtype=float)
+    diff = (c1_array - c2_array)
+    adiff = np.absolute(diff)
+    idx = adiff.argmax()
+    suma = sum(adiff)
+    if suma < tol:
+        print('Sum of absolute errors is less than {}.'.format(tol))
+    else:
+        print('Sum of absolute errors is {}.'.format(suma))
+        print('Largest difference is {} at index {}.'.format(diff[idx],idx))
+
+
 def printresults(results):
     solver = results.attributes(element_type='Solver')
 
@@ -654,9 +671,12 @@ if __name__ == '__main__':
     #filename = 'pglib_opf_case3_lmbd.m'
     #filename = 'pglib_opf_case5_pjm.m'
     #filename = 'pglib_opf_case14_ieee.m'
+    #filename = 'pglib_opf_case30_ieee.m'
     #filename = 'pglib_opf_case57_ieee.m'
     #filename = 'pglib_opf_case118_ieee.m'
-    filename = 'pglib_opf_case300_ieee.m'
+    #filename = 'pglib_opf_case162_ieee_dtc.m'
+    #filename = 'pglib_opf_case179_goc.m'
+    #filename = 'pglib_opf_case300_ieee.m'
     #filename = 'pglib_opf_case500_tamu.m'
     matpower_file = os.path.join(path, '../../download/pglib-opf-master/', filename)
     md = create_ModelData(matpower_file)
@@ -695,10 +715,12 @@ if __name__ == '__main__':
     print('CCM cost: $%3.2f' % m_ccm.obj.expr())
     print(results_ccm.Solver)
     bus_attrs = md_ccm.attributes(element_type='bus')
-    if sum(value(m_ccm.p_slack_pos[b] + m_ccm.p_slack_neg[b]) for b in bus_attrs['names']) > 1e-6:
-        print('REAL POWER IMBALANCE')
-    if sum(value(m_ccm.q_slack_pos[b] + m_ccm.q_slack_neg[b]) for b in bus_attrs['names']) > 1e-6:
-        print('REACTIVE POWER IMBALANCE')
+    p_slack = sum(value(m_ccm.p_slack_pos[b] + m_ccm.p_slack_neg[b]) for b in bus_attrs['names'])
+    q_slack = sum(value(m_ccm.q_slack_pos[b] + m_ccm.q_slack_neg[b]) for b in bus_attrs['names'])
+    if p_slack > 1e-6:
+        print('REAL POWER IMBALANCE: {}'.format(p_slack))
+    if q_slack > 1e-6:
+        print('REACTIVE POWER IMBALANCE: {}'.format(q_slack))
     gen = md_ccm.attributes(element_type='generator')
     bus = md_ccm.attributes(element_type='bus')
     branch = md_ccm.attributes(element_type='branch')
@@ -722,9 +744,9 @@ if __name__ == '__main__':
     print('FDF cost: $%3.2f' % md.data['system']['total_cost'])
     print(results.Solver)
     if value(m.p_slack_pos+m.p_slack_neg)>1e-6:
-        print('REAL POWER IMBALANCE')
+        print('REAL POWER IMBALANCE: {}'.format(value(m.p_slack_pos+m.p_slack_neg)))
     if value(m.q_slack_pos+m.q_slack_neg)>1e-6:
-        print('REACTIVE POWER IMBALANCE')
+        print('REACTIVE POWER IMBALANCE: {}'.format(value(m.q_slack_pos+m.q_slack_neg)))
     gen = md.attributes(element_type='generator')
     bus = md.attributes(element_type='bus')
     branch = md.attributes(element_type='branch')
@@ -740,26 +762,33 @@ if __name__ == '__main__':
     vm_dict.update({'fdf' : bus['vm']})
 
     # display results in dataframes
-#    print('-pg:')
+    print('-pg:')
+    compare_results(pg_dict,'fdf','ccm')
 #    print(pd.DataFrame(pg_dict))
-#    print('-qg:')
+    print('-qg:')
+    compare_results(qg_dict,'fdf','ccm')
 #    print(pd.DataFrame(qg_dict))
 #    print('-pt:')
 #    print(pd.DataFrame(pt_dict))
     print('-pf:')
-    print(pd.DataFrame(pf_dict))
+    compare_results(pf_dict,'fdf','ccm')
+#    print(pd.DataFrame(pf_dict))
     print('-pfl:')
-    print(pd.DataFrame(pfl_dict))
+    compare_results(pfl_dict,'fdf','ccm')
+#    print(pd.DataFrame(pfl_dict))
 #    print('-qt:')
 #    print(pd.DataFrame(qt_dict))
     print('-qf:')
-    print(pd.DataFrame(qf_dict))
+    compare_results(qf_dict,'fdf','ccm')
+#    print(pd.DataFrame(qf_dict))
     print('-qfl:')
-    print(pd.DataFrame(qfl_dict))
-    print('-va:')
-    print(pd.DataFrame(va_dict))
+    compare_results(qfl_dict,'fdf','ccm')
+#    print(pd.DataFrame(qfl_dict))
+#    print('-va:')
+#    print(pd.DataFrame(va_dict))
     print('-vm:')
-    print(pd.DataFrame(vm_dict))
+    compare_results(vm_dict,'fdf','ccm')
+#    print(pd.DataFrame(vm_dict))
 
 
 

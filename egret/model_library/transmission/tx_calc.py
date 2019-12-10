@@ -292,7 +292,7 @@ def _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
         shift = 0
         if branch['branch_type'] == 'transformer':
             tau = branch['transformer_tap_ratio']
-            shift = math.radians(branch['transformer_phase_shift'])
+            shift = -math.radians(branch['transformer_phase_shift'])
             #print('Branch {} has shift {} and tap ratio {}'.format(branch_name,shift,tau))
 
         if approximation_type == ApproximationType.PTDF:
@@ -401,7 +401,7 @@ def _calculate_L11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
         shift = 0
         if branch['branch_type'] == 'transformer':
             tau = branch['transformer_tap_ratio']
-            shift = math.radians(branch['transformer_phase_shift'])
+            shift = -math.radians(branch['transformer_phase_shift'])
         g = calculate_conductance(branch)/tau
 
         if base_point == BasePointType.FLATSTART:
@@ -674,7 +674,7 @@ def _calculate_pf_constant(branches,buses,index_set_branch,base_point=BasePointT
         shift = 0.0
         if branch['branch_type'] == 'transformer':
             tau = branch['transformer_tap_ratio']
-            shift = math.radians(branch['transformer_phase_shift'])
+            shift = -math.radians(branch['transformer_phase_shift'])
         g = calculate_conductance(branch)
         b = calculate_susceptance(branch)/tau
 
@@ -760,7 +760,7 @@ def _calculate_pfl_constant(branches,buses,index_set_branch,base_point=BasePoint
         shift = 0.0
         if branch['branch_type'] == 'transformer':
             tau = branch['transformer_tap_ratio']
-            shift = math.radians(branch['transformer_phase_shift'])
+            shift = -math.radians(branch['transformer_phase_shift'])
         _g = calculate_conductance(branch)
         g = _g/tau
         g2 = _g/tau**2
