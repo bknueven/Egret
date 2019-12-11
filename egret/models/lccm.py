@@ -331,7 +331,7 @@ def _load_solution_to_model_data(m, md, results):
         b_dict['pl'] = value(m.pl[b])
         b_dict['ql'] = value(m.ql[b])
         b_dict['vm'] = value(m.vm[b])
-        b_dict['va'] = value(m.vA[b])
+        b_dict['va'] = value(m.va[b])
 
         b_dict['lmp'] = value(m.dual[m.eq_p_balance[b]])
         b_dict['qlmp'] = value(m.dual[m.eq_q_balance[b]])
@@ -499,9 +499,9 @@ if __name__ == '__main__':
     md, m, results = solve_lccm(md_ac, "gurobi", lccm_model_generator=create_fixed_lccm_model, return_model=True,return_results=True,solver_tee=False, **kwargs)
     print('LCCM cost: $%3.2f' % md.data['system']['total_cost'])
     print(results.Solver)
-    if value(m.p_slack_pos+m.p_slack_neg)>1e-6:
+    if sum(value(m.p_slack_pos[b] + m.p_slack_neg[b]) for b in bus_attrs['names']) > 1e-6:
         print('REAL POWER IMBALANCE')
-    if value(m.q_slack_pos+m.q_slack_neg)>1e-6:
+    if sum(value(m.q_slack_pos[b] + m.q_slack_neg[b]) for b in bus_attrs['names']) > 1e-6:
         print('REACTIVE POWER IMBALANCE')
     gen = md.attributes(element_type='generator')
     bus = md.attributes(element_type='bus')
