@@ -767,7 +767,7 @@ def get_expr_branch_qf_lccm_approx(model, branch_name, qf_sens, qf_const, rel_to
                 coef_list.append(coef)
                 var_list.append(m_vm[bus_name])
 
-        lin_expr_list = [qf_sens] + coef_list + var_list
+        lin_expr_list = [qf_const] + coef_list + var_list
         expr = LinearExpression(lin_expr_list)
     else:
         expr = quicksum( (coef*m_vm[bus_name] for bus_name, coef in qf_sens.items() if abs(coef) >= sens_tol), start=qf_const, linear=True)
