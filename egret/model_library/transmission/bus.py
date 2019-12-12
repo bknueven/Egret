@@ -282,12 +282,14 @@ def declare_eq_p_balance_fdf(model, index_set, buses, bus_p_loads, gens_by_bus, 
     """
     m = model
 
+    # generation
     p_expr = sum(m.pg[gen_name] for bus_name in index_set for gen_name in gens_by_bus[bus_name])
+    # load
     p_expr -= sum(m.pl[bus_name] for bus_name in index_set if bus_p_loads[bus_name] is not None)
-    # p_expr -= sum(bus_gs_fixed_shunts[bus_name] for bus_name in index_set if bus_gs_fixed_shunts[bus_name] != 0.0)
-    #p_expr -= sum(bus_gs_fixed_shunts[bus_name] * buses[bus_name]["vm"] ** 2 for bus_name in index_set if bus_gs_fixed_shunts[bus_name] != 0.0)
+    # shunts
     p_expr -= sum(bus_gs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2) for bus_name in index_set if bus_gs_fixed_shunts[bus_name] != 0.0)
 
+    # slacks and line losses
     if rhs_kwargs:
         for idx,val in rhs_kwargs.items():
             if idx == 'include_feasibility_slack_pos':
@@ -308,12 +310,14 @@ def declare_eq_q_balance_fdf(model, index_set, buses, bus_q_loads, gens_by_bus, 
     """
     m = model
 
+    # generation
     q_expr = sum(m.qg[gen_name] for bus_name in index_set for gen_name in gens_by_bus[bus_name])
+    # load
     q_expr -= sum(m.ql[bus_name] for bus_name in index_set if bus_q_loads[bus_name] is not None)
-    # q_expr += sum(bus_bs_fixed_shunts[bus_name] for bus_name in index_set if bus_bs_fixed_shunts[bus_name] != 0.0)
+    # shunts
     q_expr += sum(bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2) for bus_name in index_set if bus_bs_fixed_shunts[bus_name] != 0.0)
 
-
+    # slacks and line losses
     if rhs_kwargs:
         for idx,val in rhs_kwargs.items():
             if idx == 'include_feasibility_slack_pos':
@@ -322,6 +326,62 @@ def declare_eq_q_balance_fdf(model, index_set, buses, bus_q_loads, gens_by_bus, 
                 q_expr += eval("m." + val)
             if idx == 'include_losses':
                 q_expr -= sum(m.qfl[branch_name] for branch_name in val)
+
+    m.eq_q_balance = pe.Constraint(expr = q_expr == 0.0)
+
+
+def declare_eq_p_balance_fdf_condensed(model, index_set, buses, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts, **rhs_kwargs):
+    """
+    Create the equality constraints for the SYSTEM real power balance
+
+    NOTE: Equation build orientates constants to the RHS in order to compute the correct dual variable sign
+    """
+    m = model
+
+    # generation
+    p_expr = sum(m.pg[gen_name] for bus_name in index_set for gen_name in gens_by_bus[bus_name])
+    # load
+    p_expr -= sum(m.pl[bus_name] for bus_name in index_set if bus_p_loads[bus_name] is not None)
+    # shunts
+    p_expr -= sum(bus_gs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2) for bus_name in index_set if bus_gs_fixed_shunts[bus_name] != 0.0)
+
+    # slacks and losses
+    if rhs_kwargs:
+        for idx,val in rhs_kwargs.items():
+            if idx == 'include_feasibility_slack_pos':
+                p_expr -= eval("m." + val)
+            if idx == 'include_feasibility_slack_neg':
+                p_expr += eval("m." + val)
+            if idx == 'include_losses':
+                p_expr -= m.ploss
+
+    m.eq_p_balance = pe.Constraint(expr = p_expr == 0.0)
+
+
+def declare_eq_q_balance_fdf_condensed(model, index_set, buses, bus_q_loads, gens_by_bus, bus_bs_fixed_shunts, **rhs_kwargs):
+    """
+    Create the equality constraints for the SYSTEM reactive power balance
+
+    NOTE: Equation build orientates constants to the RHS in order to compute the correct dual variable sign
+    """
+    m = model
+
+    # generation
+    q_expr = sum(m.qg[gen_name] for bus_name in index_set for gen_name in gens_by_bus[bus_name])
+    # load
+    q_expr -= sum(m.ql[bus_name] for bus_name in index_set if bus_q_loads[bus_name] is not None)
+    # shunts
+    q_expr += sum(bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2) for bus_name in index_set if bus_bs_fixed_shunts[bus_name] != 0.0)
+
+    # slacks and losses
+    if rhs_kwargs:
+        for idx,val in rhs_kwargs.items():
+            if idx == 'include_feasibility_slack_pos':
+                q_expr -= eval("m." + val)
+            if idx == 'include_feasibility_slack_neg':
+                q_expr += eval("m." + val)
+            if idx == 'include_losses':
+                q_expr -= m.qloss
 
     m.eq_q_balance = pe.Constraint(expr = q_expr == 0.0)
 

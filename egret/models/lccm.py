@@ -433,8 +433,13 @@ if __name__ == '__main__':
     path = os.path.dirname(__file__)
     #filename = 'pglib_opf_case3_lmbd.m'
     #filename = 'pglib_opf_case5_pjm.m'
-    filename = 'pglib_opf_case14_ieee.m'
+    #filename = 'pglib_opf_case14_ieee.m'
+    #filename = 'pglib_opf_case30_ieee.m'
     #filename = 'pglib_opf_case57_ieee.m'
+    #filename = 'pglib_opf_case118_ieee.m'
+    #filename = 'pglib_opf_case162_ieee_dtc.m'
+    filename = 'pglib_opf_case179_goc.m'
+    #filename = 'pglib_opf_case300_ieee.m'
     #filename = 'pglib_opf_case500_tamu.m'
     matpower_file = os.path.join(path, '../../download/pglib-opf-master/', filename)
     md = create_ModelData(matpower_file)
@@ -518,26 +523,34 @@ if __name__ == '__main__':
     vm_dict.update({'lccm' : bus['vm']})
 
     # display results in dataframes
-#    print('-pg:')
+    from fdf import compare_results
+    print('-pg:')
+    compare_results(pg_dict,'lccm','ccm')
 #    print(pd.DataFrame(pg_dict))
-#    print('-qg:')
+    print('-qg:')
+    compare_results(qg_dict,'lccm','ccm')
 #    print(pd.DataFrame(qg_dict))
 #    print('-pt:')
 #    print(pd.DataFrame(pt_dict))
     print('-pf:')
-    print(pd.DataFrame(pf_dict))
+    compare_results(pf_dict,'lccm','ccm')
+#    print(pd.DataFrame(pf_dict))
     print('-pfl:')
-    print(pd.DataFrame(pfl_dict))
+    compare_results(pfl_dict,'lccm','ccm')
+#    print(pd.DataFrame(pfl_dict))
 #    print('-qt:')
 #    print(pd.DataFrame(qt_dict))
     print('-qf:')
-    print(pd.DataFrame(qf_dict))
+    compare_results(qf_dict,'lccm','ccm')
+#    print(pd.DataFrame(qf_dict))
     print('-qfl:')
-    print(pd.DataFrame(qfl_dict))
-    print('-va:')
-    print(pd.DataFrame(va_dict))
+    compare_results(qfl_dict,'lccm','ccm')
+#    print(pd.DataFrame(qfl_dict))
+#    print('-va:')
+#    print(pd.DataFrame(va_dict))
     print('-vm:')
-    print(pd.DataFrame(vm_dict))
+    compare_results(vm_dict,'lccm','ccm')
+#    print(pd.DataFrame(vm_dict))
 
 
 

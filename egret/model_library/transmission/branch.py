@@ -37,6 +37,19 @@ def declare_var_pfl(model, index_set, **kwargs):
     decl.declare_var('pfl', model=model, index_set=index_set, **kwargs)
 
 
+def declare_var_ploss(model, **kwargs):
+    """
+    Create variable for the total real power loss in the transmission system
+    """
+    decl.declare_var('ploss', model=model, index_set=None, **kwargs)
+
+def declare_var_qloss(model, **kwargs):
+    """
+    Create variable for the total reactive power loss in the transmission system
+    """
+    decl.declare_var('qloss', model=model, index_set=None, **kwargs)
+
+
 def declare_var_pf(model, index_set, **kwargs):
     """
     Create variable for the real part of the power flow in the "from"
@@ -860,6 +873,113 @@ def declare_eq_branch_qfl_lccm_approx(model, index_set, sensitivity, constant, r
         else:
             m.qfl[branch_name] = expr
 
+
+def get_expr_ploss_fdf_condensed(model, pfl_lf, pfl_const, rel_tol=None, abs_tol=None):
+    """
+    Create a pyomo power flow real loss expression for condensed FDF
+    """
+    if rel_tol is None:
+        rel_tol = 0.
+    if abs_tol is None:
+        abs_tol = 0.
+
+    max_coef = 1
+    sens_tol = max(abs_tol, rel_tol*max_coef)
+    m_p_nw = model.p_nw
+    ## if model.p_nw is Var, we can use LinearExpression
+    ## LinearExpression may not have advantage for sparse LCCM constraints, but will be implemented analogously to FDF
+    if isinstance(m_p_nw, pe.Var):
+        coef_list = list()
+        var_list = list()
+        for bus_name, coef in pfl_lf.items():
+            if abs(coef) >= sens_tol:
+                coef_list.append(coef)
+                var_list.append(m_p_nw[bus_name])
+
+        lin_expr_list = [pfl_const] + coef_list + var_list
+        expr = LinearExpression(lin_expr_list)
+    else:
+        expr = quicksum( (coef*m_p_nw[bus_name] for bus_name, coef in pfl_lf.items() if abs(coef) >= sens_tol), start=pfl_const, linear=True)
+
+    return expr
+
+def declare_eq_ploss_fdf_condensed(model, sensitivity, constant, rel_tol, abs_tol):
+    """
+    Create the equality constraints for total real power losses
+    """
+    m = model
+
+    con_set = decl.declare_set("_con_eq_sys_ploss_approx_set", model, index_set=None)
+    ploss_is_var = isinstance(m.qfl, pe.Var)
+    if ploss_is_var:
+        m.eq_ploss = pe.Constraint(con_set)
+    else:
+        if not isinstance(m.ploss, pe.Expression):
+            raise Exception("Unrecognized type for m.ploss", m.ploss.pprint())
+
+    pfl_lf = sensitivity
+    pfl_const = constant
+    expr = get_expr_ploss_fdf_condensed(m, pfl_lf, pfl_const, rel_tol=rel_tol, abs_tol=abs_tol)
+
+    if ploss_is_var:
+        m.eq_ploss = m.ploss == expr
+    else:
+        m.ploss = expr
+
+
+def get_expr_qloss_fdf_condensed(model, qfl_lf, qfl_const, rel_tol=None, abs_tol=None):
+    """
+    Create a pyomo power flow reactive loss expression for condensed FDF
+    """
+    if rel_tol is None:
+        rel_tol = 0.
+    if abs_tol is None:
+        abs_tol = 0.
+
+    max_coef = 1
+    sens_tol = max(abs_tol, rel_tol * max_coef)
+    m_q_nw = model.q_nw
+    ## if model.q_nw is Var, we can use LinearExpression
+    ## LinearExpression may not have advantage for sparse LCCM constraints, but will be implemented analogously to FDF
+    if isinstance(m_q_nw, pe.Var):
+        coef_list = list()
+        var_list = list()
+        for bus_name, coef in qfl_lf.items():
+            if abs(coef) >= sens_tol:
+                coef_list.append(coef)
+                var_list.append(m_q_nw[bus_name])
+
+        lin_expr_list = [qfl_const] + coef_list + var_list
+        expr = LinearExpression(lin_expr_list)
+    else:
+        expr = quicksum((coef * m_q_nw[bus_name] for bus_name, coef in qfl_lf.items() if abs(coef) >= sens_tol),
+                        start=qfl_const, linear=True)
+
+    return expr
+
+
+def declare_eq_qloss_fdf_condensed(model, sensitivity, constant, rel_tol, abs_tol):
+    """
+    Create the equality constraints for total real power losses
+    """
+    m = model
+
+    con_set = decl.declare_set("_con_eq_sys_qloss_approx_set", model, index_set=None)
+    ploss_is_var = isinstance(m.qfl, pe.Var)
+    if ploss_is_var:
+        m.eq_ploss = pe.Constraint(con_set)
+    else:
+        if not isinstance(m.ploss, pe.Expression):
+            raise Exception("Unrecognized type for m.ploss", m.ploss.pprint())
+
+    qfl_lf = sensitivity
+    qfl_const = constant
+    expr = get_expr_qloss_fdf_condensed(m, qfl_lf, qfl_const, rel_tol=rel_tol, abs_tol=abs_tol)
+
+    if ploss_is_var:
+        m.eq_ploss = m.ploss == expr
+    else:
+        m.ploss = expr
 
 def declare_eq_branch_power_qtdf_approx_depreciated(model, index_set, branches, buses, bus_q_loads, gens_by_bus,
                                         bus_bs_fixed_shunts, qtdf_tol=1e-10):
