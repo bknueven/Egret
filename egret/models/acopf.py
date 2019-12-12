@@ -708,6 +708,8 @@ def _load_solution_to_model_data(m, md):
             k_dict['pt'] = value(tx_calc.calculate_p(value(m.itr[k]), value(m.itj[k]), value(m.vr[b]), value(m.vj[b])))
             k_dict['qt'] = value(tx_calc.calculate_q(value(m.itr[k]), value(m.itj[k]), value(m.vr[b]), value(m.vj[b])))
 
+    md.data['system']['ploss'] = sum(k_dict['pf'] + k_dict['pt'] for k,k_dict in branches.items())
+    md.data['system']['qloss'] = sum(k_dict['qf'] + k_dict['qt'] for k,k_dict in branches.items())
 
     unscale_ModelData_to_pu(md, inplace=True)
 

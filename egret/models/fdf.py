@@ -515,6 +515,8 @@ def _load_solution_to_model_data(m, md, results):
     branches = dict(md.elements(element_type='branch'))
 
     md.data['system']['total_cost'] = value(m.obj)
+    md.data['system']['ploss'] = sum(value(m.pfl[b]) for b,b_dict in branches.items())
+    md.data['system']['qloss'] = sum(value(m.qfl[b]) for b,b_dict in branches.items())
 
     for g,g_dict in gens.items():
         g_dict['pg'] = value(m.pg[g])

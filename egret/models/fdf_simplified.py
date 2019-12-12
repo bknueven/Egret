@@ -473,14 +473,13 @@ if __name__ == '__main__':
     gen = md_ac.attributes(element_type='generator')
     bus = md_ac.attributes(element_type='bus')
     branch = md_ac.attributes(element_type='branch')
+    system = md_ac.data['system']
     pg_dict = {'acopf' : gen['pg']}
     qg_dict = {'acopf' : gen['qg']}
-    pt_dict = {'acopf' : branch['pt']}
     pf_dict = {'acopf' : branch['pf']}
-    pfl_dict = {'acopf' : branch['pfl']}
-    qt_dict = {'acopf' : branch['qt']}
     qf_dict = {'acopf' : branch['qf']}
-    qfl_dict = {'acopf' : branch['qfl']}
+    ploss_dict = {'acopf' : system['ploss']}
+    qloss_dict = {'acopf' : system['qloss']}
     va_dict = {'acopf' : bus['va']}
     vm_dict = {'acopf' : bus['vm']}
 
@@ -505,14 +504,13 @@ if __name__ == '__main__':
     gen = md_ccm.attributes(element_type='generator')
     bus = md_ccm.attributes(element_type='bus')
     branch = md_ccm.attributes(element_type='branch')
+    system = md_ccm.data['system']
     pg_dict.update({'ccm': gen['pg']})
     qg_dict.update({'ccm': gen['qg']})
-    pt_dict.update({'ccm': branch['pt']})
     pf_dict.update({'ccm': branch['pf']})
-    pfl_dict.update({'ccm': branch['pfl']})
-    qt_dict.update({'ccm': branch['qt']})
     qf_dict.update({'ccm': branch['qf']})
-    qfl_dict.update({'ccm': branch['qfl']})
+    ploss_dict.update({'ccm': system['ploss']})
+    qloss_dict.update({'ccm': system['qloss']})
     va_dict.update({'ccm': bus['va']})
     vm_dict.update({'ccm': bus['vm']})
 
@@ -531,14 +529,13 @@ if __name__ == '__main__':
     gen = md.attributes(element_type='generator')
     bus = md.attributes(element_type='bus')
     branch = md.attributes(element_type='branch')
+    system = md.data['system']
     pg_dict.update({'fdf' : gen['pg']})
     qg_dict.update({'fdf' : gen['qg']})
-    pt_dict.update({'fdf' : branch['pt']})
     pf_dict.update({'fdf' : branch['pf']})
-    pfl_dict.update({'fdf' : branch['pfl']})
-    qt_dict.update({'fdf' : branch['qt']})
     qf_dict.update({'fdf' : branch['qf']})
-    qfl_dict.update({'fdf' : branch['qfl']})
+    ploss_dict.update({'fdf' : system['ploss']})
+    qloss_dict.update({'fdf' : system['qloss']})
     va_dict.update({'fdf' : bus['va']})
     vm_dict.update({'fdf' : bus['vm']})
 
@@ -549,22 +546,18 @@ if __name__ == '__main__':
     print('-qg:')
     compare_results(qg_dict,'fdf','ccm')
 #    print(pd.DataFrame(qg_dict))
-#    print('-pt:')
-#    print(pd.DataFrame(pt_dict))
     print('-pf:')
     compare_results(pf_dict,'fdf','ccm')
 #    print(pd.DataFrame(pf_dict))
-    print('-ploss:')
-    compare_results(pfl_dict,'fdf','ccm')
-#    print(pd.DataFrame(pfl_dict))
-#    print('-qt:')
-#    print(pd.DataFrame(qt_dict))
     print('-qf:')
     compare_results(qf_dict,'fdf','ccm')
 #    print(pd.DataFrame(qf_dict))
+    print('-ploss:')
+    print(ploss_dict)
+#    print(pd.DataFrame(ploss_dict[0]))
     print('-qloss:')
-    compare_results(qfl_dict,'fdf','ccm')
-#    print(pd.DataFrame(qfl_dict))
+    print(qloss_dict)
+ #   print(pd.DataFrame(qloss_dict[0]))
 #    print('-va:')
 #    print(pd.DataFrame(va_dict))
     print('-vm:')
