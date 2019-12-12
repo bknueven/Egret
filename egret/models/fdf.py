@@ -188,8 +188,10 @@ def create_condensed_fdf_model(model_data, include_feasibility_slack=False, incl
         pf_init[branch_name] = (branch['pf'] - branch['pt']) / 2
         qf_init[branch_name] = (branch['qf'] - branch['qt']) / 2
     _len_branch = len(branch_attrs['names'])
-    ploss_init = {'system' : sum(branches[idx]['pf'] + branches[idx]['pt'] for idx in list(range(0, _len_branch))) }
-    qloss_init = {'system' : sum(branches[idx]['qf'] + branches[idx]['qt'] for idx in list(range(0, _len_branch))) }
+#    ploss_init = {'system' : sum(branches[idx]['pf'] + branches[idx]['pt'] for idx in list(range(0, _len_branch))) }
+#    qloss_init = {'system' : sum(branches[idx]['qf'] + branches[idx]['qt'] for idx in list(range(0, _len_branch))) }
+    ploss_init = 0
+    qloss_init = 0
 
     libbranch.declare_var_pf(model=model,
                              index_set=branch_attrs['names'],
