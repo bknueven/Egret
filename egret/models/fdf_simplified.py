@@ -75,7 +75,7 @@ def _include_v_feasibility_slack(model, bus_attrs, penalty=100):
 def create_fixed_fdf_model(model_data, **kwargs):
     ## creates an FDF model with fixed m.pg and m.qg, and relaxed power balance
 
-    model, md = create_fdf_model(model_data, include_feasibility_slack=True, include_v_feasibility_slack=True, **kwargs)
+    model, md = create_simplified_fdf_model(model_data, include_feasibility_slack=True, include_v_feasibility_slack=True, **kwargs)
 
     for g, pg in model.pg.items():
         pg.value = value(m_ac.pg[g])
@@ -88,13 +88,13 @@ def create_fixed_fdf_model(model_data, **kwargs):
     return model, md
 
 
-def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feasibility_slack=False, calculation_method=SensitivityCalculationMethod.INVERT):
+def create_simplified_fdf_model(model_data, include_feasibility_slack=False, include_v_feasibility_slack=False, calculation_method=SensitivityCalculationMethod.INVERT):
     md = model_data.clone_in_service()
-    tx_utils.scale_ModelData_to_pu(md, inplace = True)
+    tx_utils.scale_ModelData_to_pu(md, inplace=True)
 
-    data_utils_deprecated.create_dicts_of_fdf(md)
+    data_utils_deprecated.create_dicts_of_fdf_simplified(md)
     # TO BE DELETED: below and other functions called in create_dicts... method above
-    #calculate_ptdf_ldf(branches, buses, index_set_branch, index_set_bus, reference_bus,
+    # calculate_ptdf_ldf(branches, buses, index_set_branch, index_set_bus, reference_bus,
     #                   base_point=BasePointType.SOLUTION, sparse_index_set_branch=None, mapping_bus_to_idx=None)
 
     gens = dict(md.elements(element_type='generator'))
@@ -102,12 +102,14 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
     branches = dict(md.elements(element_type='branch'))
     loads = dict(md.elements(element_type='load'))
     shunts = dict(md.elements(element_type='shunt'))
+    system_data = dict(md.data['system'])
 
     gen_attrs = md.attributes(element_type='generator')
     bus_attrs = md.attributes(element_type='bus')
     branch_attrs = md.attributes(element_type='branch')
     load_attrs = md.attributes(element_type='load')
     shunt_attrs = md.attributes(element_type='shunt')
+    system_attrs = md.data['system']
 
     inlet_branches_by_bus, outlet_branches_by_bus = tx_utils.inlet_outlet_branches_by_bus(branches, buses)
     gens_by_bus = tx_utils.gens_by_bus(buses, gens)
@@ -127,14 +129,15 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
 
     ### declare the polar voltages
     libbus.declare_var_vm(model, bus_attrs['names'], initialize=bus_attrs['vm'],
-                          #bounds=zip_items(bus_attrs['v_min'], bus_attrs['v_max'])
+                          # bounds=zip_items(bus_attrs['v_min'], bus_attrs['v_max'])
                           )
 
     ### include the feasibility slack for the bus balances
     p_rhs_kwargs = {}
     q_rhs_kwargs = {}
     if include_feasibility_slack:
-        p_rhs_kwargs, q_rhs_kwargs, penalty_expr = _include_system_feasibility_slack(model, gen_attrs, bus_p_loads, bus_q_loads)
+        p_rhs_kwargs, q_rhs_kwargs, penalty_expr = _include_system_feasibility_slack(model, gen_attrs, bus_p_loads,
+                                                                                     bus_q_loads)
 
     v_rhs_kwargs = {}
     if include_v_feasibility_slack:
@@ -173,45 +176,46 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
         if s_max[k] is None:
             s_lbub[k] = (None, None)
         else:
-            s_lbub[k] = (-s_max[k],s_max[k])
+            s_lbub[k] = (-s_max[k], s_max[k])
     pf_bounds = s_lbub
     qf_bounds = s_lbub
     pfl_bounds = s_lbub
     qfl_bounds = s_lbub
     pf_init = dict()
-    pfl_init = dict()
     qf_init = dict()
-    qfl_init = dict()
     for branch_name, branch in branches.items():
         pf_init[branch_name] = (branch['pf'] - branch['pt']) / 2
-        pfl_init[branch_name] = branch['pf'] + branch['pt']
         qf_init[branch_name] = (branch['qf'] - branch['qt']) / 2
-        qfl_init[branch_name] = branch['qf'] + branch['qt']
+    _len_branch = len(branch_attrs['names'])
+#    ploss_init = {'system' : sum(branches[idx]['pf'] + branches[idx]['pt'] for idx in list(range(0, _len_branch))) }
+#    qloss_init = {'system' : sum(branches[idx]['qf'] + branches[idx]['qt'] for idx in list(range(0, _len_branch))) }
+    ploss_init = 0
+    qloss_init = 0
 
     libbranch.declare_var_pf(model=model,
                              index_set=branch_attrs['names'],
-                             initialize=pf_init)#,
-#                             bounds=pf_bounds
-#                             )
-    libbranch.declare_var_pfl(model=model,
-                             index_set=branch_attrs['names'],
-                             initialize=pfl_init)#,
-#                             bounds=pfl_bounds
-#                             )
+                             initialize=pf_init)  # ,
+    #                             bounds=pf_bounds
+    #                             )
     libbranch.declare_var_qf(model=model,
                              index_set=branch_attrs['names'],
-                             initialize=qf_init)#,
-#                             bounds=qf_bounds
-#                             )
-    libbranch.declare_var_qfl(model=model,
-                              index_set=branch_attrs['names'],
-                              initialize=qfl_init)  # ,
-#                              bounds=qfl_bounds
-#                              )
+                             initialize=qf_init)  # ,
+    #                             bounds=qf_bounds
+    #                             )
+    libbranch.declare_var_ploss(model=model,
+                              initialize=ploss_init)  # ,
+    #                             bounds=pfl_bounds
+    #                             )
+    libbranch.declare_var_qloss(model=model,
+                              initialize=qloss_init)  # ,
+    #                              bounds=qfl_bounds
+    #                              )
 
     ### declare net withdrawal definition constraints
-    libbus.declare_eq_p_net_withdraw_fdf(model,bus_attrs['names'],buses,bus_p_loads,gens_by_bus,bus_gs_fixed_shunts)
-    libbus.declare_eq_q_net_withdraw_fdf(model,bus_attrs['names'],buses,bus_q_loads,gens_by_bus,bus_bs_fixed_shunts)
+    libbus.declare_eq_p_net_withdraw_fdf(model, bus_attrs['names'], buses, bus_p_loads, gens_by_bus,
+                                         bus_gs_fixed_shunts)
+    libbus.declare_eq_q_net_withdraw_fdf(model, bus_attrs['names'], buses, bus_q_loads, gens_by_bus,
+                                         bus_bs_fixed_shunts)
 
     libbranch.declare_eq_branch_pf_fdf_approx(model=model,
                                               index_set=branch_attrs['names'],
@@ -229,21 +233,19 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
                                               abs_tol=None
                                               )
 
-    libbranch.declare_eq_branch_pfl_fdf_approx(model=model,
-                                               index_set=branch_attrs['names'],
-                                               sensitivity=branch_attrs['pldf'],
-                                               constant=branch_attrs['pldf_c'],
-                                               rel_tol=None,
-                                               abs_tol=None
-                                               )
+    libbranch.declare_eq_ploss_fdf_simplified(model=model,
+                                           sensitivity=bus_attrs['ploss_sens'],
+                                           constant=system_attrs['ploss_const'],
+                                           rel_tol=None,
+                                           abs_tol=None
+                                           )
 
-    libbranch.declare_eq_branch_qfl_fdf_approx(model=model,
-                                               index_set=branch_attrs['names'],
-                                               sensitivity=branch_attrs['qldf'],
-                                               constant=branch_attrs['qldf_c'],
-                                               rel_tol=None,
-                                               abs_tol=None
-                                               )
+    libbranch.declare_eq_qloss_fdf_simplified(model=model,
+                                           sensitivity=bus_attrs['qloss_sens'],
+                                           constant=system_attrs['qloss_const'],
+                                           rel_tol=None,
+                                           abs_tol=None
+                                           )
 
     libbus.declare_eq_vm_vdf_approx(model=model,
                                     index_set=bus_attrs['names'],
@@ -254,24 +256,22 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
                                     )
 
     ### declare the p balance
-    libbus.declare_eq_p_balance_fdf(model=model,
+    libbus.declare_eq_p_balance_fdf_simplified(model=model,
                                     index_set=bus_attrs['names'],
                                     buses=buses,
                                     bus_p_loads=bus_p_loads,
                                     gens_by_bus=gens_by_bus,
                                     bus_gs_fixed_shunts=bus_gs_fixed_shunts,
-                                    include_losses=branch_attrs['names'],
                                     **p_rhs_kwargs
                                     )
 
     ### declare the q balance
-    libbus.declare_eq_q_balance_fdf(model=model,
+    libbus.declare_eq_q_balance_fdf_simplified(model=model,
                                     index_set=bus_attrs['names'],
                                     buses=buses,
                                     bus_q_loads=bus_q_loads,
                                     gens_by_bus=gens_by_bus,
                                     bus_bs_fixed_shunts=bus_bs_fixed_shunts,
-                                    include_losses=branch_attrs['names'],
                                     **q_rhs_kwargs
                                     )
 
@@ -302,208 +302,6 @@ def create_fdf_model(model_data, include_feasibility_slack=False, include_v_feas
     return model, md
 
 
-def create_ccm_model(model_data, include_feasibility_slack=False, include_v_feasibility_slack=False, calculation_method=SensitivityCalculationMethod.INVERT):
-    '''
-    convex combination midpoint (ccm) model
-    NEED TO REMOVE FROM FDF.PY
-    '''
-    md = model_data.clone_in_service()
-    tx_utils.scale_ModelData_to_pu(md, inplace = True)
-
-    gens = dict(md.elements(element_type='generator'))
-    buses = dict(md.elements(element_type='bus'))
-    branches = dict(md.elements(element_type='branch'))
-    loads = dict(md.elements(element_type='load'))
-    shunts = dict(md.elements(element_type='shunt'))
-
-    gen_attrs = md.attributes(element_type='generator')
-    bus_attrs = md.attributes(element_type='bus')
-    branch_attrs = md.attributes(element_type='branch')
-    load_attrs = md.attributes(element_type='load')
-    shunt_attrs = md.attributes(element_type='shunt')
-
-    inlet_branches_by_bus, outlet_branches_by_bus = \
-        tx_utils.inlet_outlet_branches_by_bus(branches, buses)
-    gens_by_bus = tx_utils.gens_by_bus(buses, gens)
-
-    model = pe.ConcreteModel()
-
-    ### declare (and fix) the loads at the buses
-    bus_p_loads, bus_q_loads = tx_utils.dict_of_bus_loads(buses, loads)
-
-    libbus.declare_var_pl(model, bus_attrs['names'], initialize=bus_p_loads)
-    libbus.declare_var_ql(model, bus_attrs['names'], initialize=bus_q_loads)
-    model.pl.fix()
-    model.ql.fix()
-
-    ### declare the fixed shunts at the buses
-    bus_bs_fixed_shunts, bus_gs_fixed_shunts = tx_utils.dict_of_bus_fixed_shunts(buses, shunts)
-
-    ### declare the polar voltages
-    libbus.declare_var_vm(model, bus_attrs['names'], initialize=bus_attrs['vm'],
-                          bounds=zip_items(bus_attrs['v_min'], bus_attrs['v_max'])
-                          )
-
-    va_bounds = {k: (-pi, pi) for k in bus_attrs['va']}
-    libbus.declare_var_va(model, bus_attrs['names'], initialize=bus_attrs['va'],
-                          bounds=va_bounds
-                          )
-
-    dva_initialize = {k: 0.0 for k in branch_attrs['names']}
-    libbranch.declare_var_dva(model, branch_attrs['names'],
-                              initialize=dva_initialize
-                              )
-
-    ### include the feasibility slack for the bus balances
-    p_rhs_kwargs = {}
-    q_rhs_kwargs = {}
-    if include_feasibility_slack:
-        p_rhs_kwargs, q_rhs_kwargs, penalty_expr = _include_system_feasibility_slack(model, gen_attrs, bus_p_loads, bus_q_loads)
-
-    v_rhs_kwargs = {}
-    if include_v_feasibility_slack:
-        v_rhs_kwargs, v_penalty_expr = _include_v_feasibility_slack(model, bus_attrs)
-
-    ### declare the generator real and reactive power
-    pg_init = {k: (gen_attrs['p_min'][k] + gen_attrs['p_max'][k]) / 2.0 for k in gen_attrs['pg']}
-    libgen.declare_var_pg(model, gen_attrs['names'], initialize=pg_init,
-                          bounds=zip_items(gen_attrs['p_min'], gen_attrs['p_max'])
-                          )
-
-    qg_init = {k: (gen_attrs['q_min'][k] + gen_attrs['q_max'][k]) / 2.0 for k in gen_attrs['qg']}
-    libgen.declare_var_qg(model, gen_attrs['names'], initialize=qg_init,
-                          bounds=zip_items(gen_attrs['q_min'], gen_attrs['q_max'])
-                          )
-
-    q_pos_bounds = {k: (0, inf) for k in gen_attrs['qg']}
-    decl.declare_var('q_pos', model=model, index_set=gen_attrs['names'], bounds=q_pos_bounds)
-
-    q_neg_bounds = {k: (0, inf) for k in gen_attrs['qg']}
-    decl.declare_var('q_neg', model=model, index_set=gen_attrs['names'], bounds=q_neg_bounds)
-
-    ### declare the net withdrawal variables (for later use in defining constraints with efficient 'LinearExpression')
-    p_net_withdrawal_init = {k: 0 for k in bus_attrs['names']}
-    libbus.declare_var_p_nw(model, bus_attrs['names'], initialize=p_net_withdrawal_init)
-
-    q_net_withdrawal_init = {k: 0 for k in bus_attrs['names']}
-    libbus.declare_var_q_nw(model, bus_attrs['names'], initialize=q_net_withdrawal_init)
-
-    ### declare the current flows in the branches #TODO: Why are the currents being calculated??
-    vr_init = {k: bus_attrs['vm'][k] * pe.cos(bus_attrs['va'][k]) for k in bus_attrs['vm']}
-    vj_init = {k: bus_attrs['vm'][k] * pe.sin(bus_attrs['va'][k]) for k in bus_attrs['vm']}
-    s_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
-    s_lbub = dict()
-    for k in branches.keys():
-        if s_max[k] is None:
-            s_lbub[k] = (None, None)
-        else:
-            s_lbub[k] = (-s_max[k],s_max[k])
-    pf_bounds = s_lbub
-    qf_bounds = s_lbub
-    pfl_bounds = s_lbub
-    qfl_bounds = s_lbub
-    pf_init = dict()
-    pfl_init = dict()
-    qf_init = dict()
-    qfl_init = dict()
-    for branch_name, branch in branches.items():
-        from_bus = branch['from_bus']
-        to_bus = branch['to_bus']
-        y_matrix = tx_calc.calculate_y_matrix_from_branch(branch)
-        ifr_init = tx_calc.calculate_ifr(vr_init[from_bus], vj_init[from_bus], vr_init[to_bus],
-                                         vj_init[to_bus], y_matrix)
-        ifj_init = tx_calc.calculate_ifj(vr_init[from_bus], vj_init[from_bus], vr_init[to_bus],
-                                         vj_init[to_bus], y_matrix)
-        itr_init = tx_calc.calculate_itr(vr_init[from_bus], vj_init[from_bus], vr_init[to_bus],
-                                         vj_init[to_bus], y_matrix)
-        itj_init = tx_calc.calculate_itj(vr_init[from_bus], vj_init[from_bus], vr_init[to_bus],
-                                         vj_init[to_bus], y_matrix)
-        pf_init[branch_name] = (tx_calc.calculate_p(ifr_init, ifj_init, vr_init[from_bus], vj_init[from_bus])\
-                                -tx_calc.calculate_p(itr_init, itj_init, vr_init[to_bus], vj_init[to_bus]))/2
-        pfl_init[branch_name] = (tx_calc.calculate_p(ifr_init, ifj_init, vr_init[from_bus], vj_init[from_bus])\
-                                +tx_calc.calculate_p(itr_init, itj_init, vr_init[to_bus], vj_init[to_bus]))
-        qf_init[branch_name] = (tx_calc.calculate_q(ifr_init, ifj_init, vr_init[from_bus], vj_init[from_bus])\
-                                -tx_calc.calculate_q(itr_init, itj_init, vr_init[to_bus], vj_init[to_bus]))/2
-        qfl_init[branch_name] = (tx_calc.calculate_q(ifr_init, ifj_init, vr_init[from_bus], vj_init[from_bus])\
-                                +tx_calc.calculate_q(itr_init, itj_init, vr_init[to_bus], vj_init[to_bus]))
-
-    libbranch.declare_var_pf(model=model,
-                             index_set=branch_attrs['names'],
-                             initialize=pf_init)#,
-#                             bounds=pf_bounds
-#                             )
-    libbranch.declare_var_pfl(model=model,
-                             index_set=branch_attrs['names'],
-                             initialize=pfl_init)#,
-#                             bounds=pfl_bounds
-#                             )
-    libbranch.declare_var_qf(model=model,
-                             index_set=branch_attrs['names'],
-                             initialize=qf_init)#,
-#                             bounds=qf_bounds
-#                             )
-    decl.declare_var('qfl', model=model, index_set=branch_attrs['names'], initialize=qfl_init)#, bounds=qfl_bounds)
-
-    ### declare net withdrawal definition constraints
-    libbus.declare_eq_p_net_withdraw_at_bus(model,bus_attrs['names'],bus_p_loads,gens_by_bus,bus_gs_fixed_shunts)
-    libbus.declare_eq_q_net_withdraw_at_bus(model,bus_attrs['names'],bus_q_loads,gens_by_bus,bus_bs_fixed_shunts)
-
-    ### declare the midpoint power approximation constraints
-    libbranch.declare_eq_branch_midpoint_power(model=model,
-                                               index_set=branch_attrs['names'],
-                                               branches=branches
-                                              )
-
-    ### declare real power balance constraint
-    libbus.declare_eq_p_balance_ccm_approx(model=model,
-                                           index_set=bus_attrs['names'],
-                                           buses=buses,
-                                           bus_p_loads=bus_p_loads,
-                                           gens_by_bus=gens_by_bus,
-                                           bus_gs_fixed_shunts=bus_gs_fixed_shunts,
-                                           inlet_branches_by_bus=inlet_branches_by_bus,
-                                           outlet_branches_by_bus=outlet_branches_by_bus,
-                                           **p_rhs_kwargs
-                                           )
-
-    ### declare reactive power balance constraint
-    libbus.declare_eq_q_balance_ccm_approx(model=model,
-                                           index_set=bus_attrs['names'],
-                                           buses=buses,
-                                           bus_q_loads=bus_q_loads,
-                                           gens_by_bus=gens_by_bus,
-                                           bus_bs_fixed_shunts=bus_bs_fixed_shunts,
-                                           inlet_branches_by_bus=inlet_branches_by_bus,
-                                           outlet_branches_by_bus=outlet_branches_by_bus,
-                                           **q_rhs_kwargs
-                                           )
-
-    ### declare the real power flow limits
-    libbranch.declare_fdf_thermal_limit(model=model,
-                                        index_set=branch_attrs['names'],
-                                        thermal_limits=s_max,
-                                        )
-
-    libgen.declare_eq_q_fdf_deviation(model=model,
-                                      index_set=gen_attrs['names'],
-                                      gens=gens)
-
-    ### declare the generator cost objective
-    libgen.declare_expression_pgqg_fdf_cost(model=model,
-                                            index_set=gen_attrs['names'],
-                                            p_costs=gen_attrs['p_cost']
-                                            )
-
-    obj_expr = sum(model.pg_operating_cost[gen_name] for gen_name in model.pg_operating_cost)
-    obj_expr += sum(model.qg_operating_cost[gen_name] for gen_name in model.qg_operating_cost)
-    if include_feasibility_slack:
-        obj_expr += penalty_expr
-    if include_v_feasibility_slack:
-        obj_expr += v_penalty_expr
-    model.obj = pe.Objective(expr=obj_expr)
-
-    return model, md
-
 
 def _load_solution_to_model_data(m, md, results):
     from pyomo.environ import value
@@ -513,8 +311,11 @@ def _load_solution_to_model_data(m, md, results):
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))
     branches = dict(md.elements(element_type='branch'))
+    system = dict(md.data['system'])
 
     md.data['system']['total_cost'] = value(m.obj)
+    md.data['system']['ploss'] = value(m.ploss)
+    md.data['system']['qloss'] = value(m.qloss)
 
     for g,g_dict in gens.items():
         g_dict['pg'] = value(m.pg[g])
@@ -525,39 +326,35 @@ def _load_solution_to_model_data(m, md, results):
         b_dict['ql'] = value(m.ql[b])
         b_dict['vm'] = value(m.vm[b])
 
+        # LMP energy components
         b_dict['lmp'] = value(m.dual[m.eq_p_balance])
         b_dict['qlmp'] = value(m.dual[m.eq_q_balance])
+        # LMP congestion components
         for k, k_dict in branches.items():
-            # TODO: check if line congestion calc (i.e. remove from/to bus conditionals?)
-            if k_dict['from_bus'] == b or k_dict['to_bus'] == b:
-                ptdf = k_dict['ptdf']
-                pldf = k_dict['pldf']
-                b_dict['lmp'] += ptdf[b]*value(m.dual[m.eq_pf_branch[k]])
-                b_dict['lmp'] += pldf[b]*value(m.dual[m.eq_pfl_branch[k]])
-
-                qtdf = k_dict['qtdf']
-                qldf = k_dict['qldf']
-                b_dict['qlmp'] += qtdf[b]*value(m.dual[m.eq_qf_branch[k]])
-                b_dict['qlmp'] += qldf[b]*value(m.dual[m.eq_qfl_branch[k]])
+            ptdf = k_dict['ptdf']
+            qtdf = k_dict['qtdf']
+            b_dict['lmp'] += ptdf[b]*value(m.dual[m.eq_pf_branch[k]])
+            b_dict['qlmp'] += qtdf[b]*value(m.dual[m.eq_qf_branch[k]])
+        # LMP loss components
+        b_dict['lmp'] += b_dict['ploss_sens']*value(m.dual[m.eq_ploss])
+        b_dict['qlmp'] += b_dict['qloss_sens']*value(m.dual[m.eq_qloss])
 
     for k, k_dict in branches.items():
         k_dict['pf'] = value(m.pf[k])
         k_dict['qf'] = value(m.qf[k])
-        k_dict['pfl'] = value(m.pfl[k])
-        k_dict['qfl'] = value(m.qfl[k])
 
     unscale_ModelData_to_pu(md, inplace=True)
 
     return
 
 
-def solve_fdf(model_data,
+def solve_fdf_simplified(model_data,
                 solver,
                 timelimit = None,
                 solver_tee = True,
                 symbolic_solver_labels = False,
                 options = None,
-                fdf_model_generator = create_fdf_model,
+                fdf_model_generator = create_simplified_fdf_model,
                 return_model = False,
                 return_results = False,
                 **kwargs):
@@ -724,7 +521,7 @@ if __name__ == '__main__':
     #kwargs = {'include_v_feasibility_slack':True,'include_feasibility_slack':True}
 
     # solve (fixed) FDF
-    md, m, results = solve_fdf(md_ac, "gurobi", fdf_model_generator=create_fixed_fdf_model, return_model=True,return_results=True,solver_tee=False, **kwargs)
+    md, m, results = solve_fdf_simplified(md_ac, "gurobi", fdf_model_generator=create_fixed_fdf_model, return_model=True,return_results=True,solver_tee=False, **kwargs)
     print('FDF cost: $%3.2f' % md.data['system']['total_cost'])
     print(results.Solver)
     if value(m.p_slack_pos+m.p_slack_neg)>1e-6:
@@ -757,7 +554,7 @@ if __name__ == '__main__':
     print('-pf:')
     compare_results(pf_dict,'fdf','ccm')
 #    print(pd.DataFrame(pf_dict))
-    print('-pfl:')
+    print('-ploss:')
     compare_results(pfl_dict,'fdf','ccm')
 #    print(pd.DataFrame(pfl_dict))
 #    print('-qt:')
@@ -765,7 +562,7 @@ if __name__ == '__main__':
     print('-qf:')
     compare_results(qf_dict,'fdf','ccm')
 #    print(pd.DataFrame(qf_dict))
-    print('-qfl:')
+    print('-qloss:')
     compare_results(qfl_dict,'fdf','ccm')
 #    print(pd.DataFrame(qfl_dict))
 #    print('-va:')

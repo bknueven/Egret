@@ -147,7 +147,7 @@ def create_dicts_of_lccm(md, base_point=BasePointType.SOLUTION):
         branch['lv_c'] = lv_c[idx]
 
 
-def create_dicts_of_condensed_fdf(md, base_point=BasePointType.SOLUTION):
+def create_dicts_of_fdf_simplified(md, base_point=BasePointType.SOLUTION):
     branches = dict(md.elements(element_type='branch'))
     buses = dict(md.elements(element_type='bus'))
     branch_attrs = md.attributes(element_type='branch')
@@ -180,19 +180,19 @@ def create_dicts_of_condensed_fdf(md, base_point=BasePointType.SOLUTION):
         branch['qtdf_c'] = qtdf_c[idx]
 
     # condensed loss factors are pldf and qldf summed over the set of branches
-    md.data['system']['pfl_const'] = sum(pldf_c[idx] for idx in list(range(0, _len_branch)))
-    md.data['system']['qfl_const'] = sum(qldf_c[idx] for idx in list(range(0, _len_branch)))
+    md.data['system']['ploss_const'] = sum(pldf_c[idx] for idx in list(range(0, _len_branch)))
+    md.data['system']['qloss_const'] = sum(qldf_c[idx] for idx in list(range(0, _len_branch)))
 
 
     for idx, bus_name in _mapping_bus.items():
         bus = md.data['elements']['bus'][bus_name]
 
         # condensed loss factors are pldf and qldf summed over the set of branches
-        _pfl_lf = sum(pldf[i, idx] for i in list(range(0, _len_branch)))
-        bus['pfl_lf'] = _pfl_lf
+        _ploss_sens = sum(pldf[i, idx] for i in list(range(0, _len_branch)))
+        bus['ploss_sens'] = _ploss_sens
 
-        _qfl_lf = sum(qldf[i, idx] for i in list(range(0, _len_branch)))
-        bus['qfl_lf'] = _qfl_lf
+        _qloss_sens = sum(qldf[i, idx] for i in list(range(0, _len_branch)))
+        bus['qloss_sens'] = _qloss_sens
 
         # voltage distribution factors are the same as in FDF
         _row_vdf = {bus_attrs['names'][i]: vdf[idx, i] for i in list(range(0, _len_bus))}

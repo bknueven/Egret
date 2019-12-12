@@ -330,7 +330,7 @@ def declare_eq_q_balance_fdf(model, index_set, buses, bus_q_loads, gens_by_bus, 
     m.eq_q_balance = pe.Constraint(expr = q_expr == 0.0)
 
 
-def declare_eq_p_balance_fdf_condensed(model, index_set, buses, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts, **rhs_kwargs):
+def declare_eq_p_balance_fdf_simplified(model, index_set, buses, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts, **rhs_kwargs):
     """
     Create the equality constraints for the SYSTEM real power balance
 
@@ -358,7 +358,7 @@ def declare_eq_p_balance_fdf_condensed(model, index_set, buses, bus_p_loads, gen
     m.eq_p_balance = pe.Constraint(expr = p_expr == 0.0)
 
 
-def declare_eq_q_balance_fdf_condensed(model, index_set, buses, bus_q_loads, gens_by_bus, bus_bs_fixed_shunts, **rhs_kwargs):
+def declare_eq_q_balance_fdf_simplified(model, index_set, buses, bus_q_loads, gens_by_bus, bus_bs_fixed_shunts, **rhs_kwargs):
     """
     Create the equality constraints for the SYSTEM reactive power balance
 
