@@ -129,7 +129,7 @@ def create_simplified_fdf_model(model_data, include_feasibility_slack=False, inc
 
     ### declare the polar voltages
     libbus.declare_var_vm(model, bus_attrs['names'], initialize=bus_attrs['vm'],
-                          # bounds=zip_items(bus_attrs['v_min'], bus_attrs['v_max'])
+                          #bounds=zip_items(bus_attrs['v_min'], bus_attrs['v_max'])
                           )
 
     ### include the feasibility slack for the bus balances
@@ -433,10 +433,10 @@ def compare_results(results, c1, c2, tol=1e-6):
     idx = adiff.argmax()
     suma = sum(adiff)
     if suma < tol:
-        print('Sum of absolute errors is less than {}.'.format(tol))
+        print('Sum of absolute differences is less than {}.'.format(tol))
     else:
-        print('Sum of absolute errors is {}.'.format(suma))
-        print('Largest difference is {} at index {}.'.format(diff[idx],idx))
+        print('Sum of absolute differences is {}.'.format(suma))
+        print('Largest difference is {} at index {}.'.format(diff[idx],idx+1))
 
 
 def printresults(results):
@@ -476,56 +476,32 @@ if __name__ == '__main__':
     system = md_ac.data['system']
     pg_dict = {'acopf' : gen['pg']}
     qg_dict = {'acopf' : gen['qg']}
-    pf_dict = {'acopf' : branch['pf']}
-    qf_dict = {'acopf' : branch['qf']}
+    tmp_pf = branch['pf']
+    tmp_pt = branch['pt']
+    tmp = {key : (tmp_pf[key] - tmp_pt.get(key,0)) / 2 for key in tmp_pf.keys()}
+    pf_dict = {'acopf' : tmp}
+    tmp_qf = branch['qf']
+    tmp_qt = branch['qt']
+    tmp = {key : (tmp_qf[key] - tmp_qt.get(key,0)) / 2 for key in tmp_qf.keys()}
+    qf_dict = {'acopf' : tmp}
     ploss_dict = {'acopf' : system['ploss']}
     qloss_dict = {'acopf' : system['qloss']}
     va_dict = {'acopf' : bus['va']}
     vm_dict = {'acopf' : bus['vm']}
-
-    # solve CCM
-    kwargs={'solved_model':m_ac}
-    import ccm as ccm
-    #ccm_model_generator=create_fixed_ccm_model to fix generator variables
-    md_ccm, m_ccm, results_ccm = ccm.solve_ccm(md_ac, "ipopt",ccm_model_generator=ccm.create_fixed_ccm_model, return_model=True,return_results=True,solver_tee=False, **kwargs)
-#    model,md = ccm.create_ccm_model(md_ac)
-#    from egret.common.solver_interface import _solve_model
-#    m, results = _solve_model(model,"ipopt",solver_tee=False)
-#    ccm._load_solution_to_model_data(m, md)
-    print('CCM cost: $%3.2f' % m_ccm.obj.expr())
-    print(results_ccm.Solver)
-    bus_attrs = md_ccm.attributes(element_type='bus')
-    p_slack = sum(value(m_ccm.p_slack_pos[b] + m_ccm.p_slack_neg[b]) for b in bus_attrs['names'])
-    q_slack = sum(value(m_ccm.q_slack_pos[b] + m_ccm.q_slack_neg[b]) for b in bus_attrs['names'])
-    if p_slack > 1e-6:
-        print('REAL POWER IMBALANCE: {}'.format(p_slack))
-    if q_slack > 1e-6:
-        print('REACTIVE POWER IMBALANCE: {}'.format(q_slack))
-    gen = md_ccm.attributes(element_type='generator')
-    bus = md_ccm.attributes(element_type='bus')
-    branch = md_ccm.attributes(element_type='branch')
-    system = md_ccm.data['system']
-    pg_dict.update({'ccm': gen['pg']})
-    qg_dict.update({'ccm': gen['qg']})
-    pf_dict.update({'ccm': branch['pf']})
-    qf_dict.update({'ccm': branch['qf']})
-    ploss_dict.update({'ccm': system['ploss']})
-    qloss_dict.update({'ccm': system['qloss']})
-    va_dict.update({'ccm': bus['va']})
-    vm_dict.update({'ccm': bus['vm']})
 
     # keyword arguments
     kwargs = {}
     #kwargs = {'include_v_feasibility_slack':True,'include_feasibility_slack':True}
 
     # solve (fixed) FDF
-    md, m, results = solve_fdf_simplified(md_ac, "gurobi", fdf_model_generator=create_fixed_fdf_model, return_model=True,return_results=True,solver_tee=False, **kwargs)
+    md, m, results = solve_fdf_simplified(md_ac, "gurobi", fdf_model_generator=create_simplified_fdf_model, return_model=True,return_results=True,solver_tee=False, **kwargs)
     print('FDF cost: $%3.2f' % md.data['system']['total_cost'])
     print(results.Solver)
-    if value(m.p_slack_pos+m.p_slack_neg)>1e-6:
-        print('REAL POWER IMBALANCE: {}'.format(value(m.p_slack_pos+m.p_slack_neg)))
-    if value(m.q_slack_pos+m.q_slack_neg)>1e-6:
-        print('REACTIVE POWER IMBALANCE: {}'.format(value(m.q_slack_pos+m.q_slack_neg)))
+    if 'm.p_slack_pos' in locals():
+        if value(m.p_slack_pos+m.p_slack_neg)>1e-6:
+            print('REAL POWER IMBALANCE: {}'.format(value(m.p_slack_pos+m.p_slack_neg)))
+        if value(m.q_slack_pos+m.q_slack_neg)>1e-6:
+            print('REACTIVE POWER IMBALANCE: {}'.format(value(m.q_slack_pos+m.q_slack_neg)))
     gen = md.attributes(element_type='generator')
     bus = md.attributes(element_type='bus')
     branch = md.attributes(element_type='branch')
@@ -541,28 +517,28 @@ if __name__ == '__main__':
 
     # display results in dataframes
     print('-pg:')
-    compare_results(pg_dict,'fdf','ccm')
-#    print(pd.DataFrame(pg_dict))
+    compare_results(pg_dict,'fdf','acopf')
+    print(pd.DataFrame(pg_dict))
     print('-qg:')
-    compare_results(qg_dict,'fdf','ccm')
-#    print(pd.DataFrame(qg_dict))
+    compare_results(qg_dict,'fdf','acopf')
+    print(pd.DataFrame(qg_dict))
     print('-pf:')
-    compare_results(pf_dict,'fdf','ccm')
-#    print(pd.DataFrame(pf_dict))
+    compare_results(pf_dict,'fdf','acopf')
+    print(pd.DataFrame(pf_dict))
     print('-qf:')
-    compare_results(qf_dict,'fdf','ccm')
-#    print(pd.DataFrame(qf_dict))
+    compare_results(qf_dict,'fdf','acopf')
+    print(pd.DataFrame(qf_dict))
     print('-ploss:')
     print(ploss_dict)
 #    print(pd.DataFrame(ploss_dict[0]))
     print('-qloss:')
     print(qloss_dict)
- #   print(pd.DataFrame(qloss_dict[0]))
+#    print(pd.DataFrame(qloss_dict[0]))
 #    print('-va:')
 #    print(pd.DataFrame(va_dict))
     print('-vm:')
-    compare_results(vm_dict,'fdf','ccm')
-#    print(pd.DataFrame(vm_dict))
+    compare_results(vm_dict,'fdf','acopf')
+    print(pd.DataFrame(vm_dict))
 
 
 
