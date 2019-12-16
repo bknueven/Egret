@@ -750,7 +750,6 @@ if __name__ == '__main__':
     print(pd.DataFrame(vm_dict))
 
 
-
 # not solving pglib_opf_case57_ieee
 # pglib_opf_case500_tamu
 # pglib_opf_case162_ieee_dtc

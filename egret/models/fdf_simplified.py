@@ -77,15 +77,31 @@ def create_fixed_fdf_model(model_data, **kwargs):
 
     model, md = create_simplified_fdf_model(model_data, include_feasibility_slack=True, include_v_feasibility_slack=True, **kwargs)
 
+    #c = 0
+
     for g, pg in model.pg.items():
         pg.value = value(m_ac.pg[g])
     for g, qg in model.qg.items():
         qg.value = value(m_ac.qg[g])
+        #c += 1
+        #if c==4:
+        #    qg.fix()
 
     model.pg.fix()
     model.qg.fix()
 
     return model, md
+
+
+def create_fixed_vm_fdf_model(model_data, **kwargs):
+    ## creates an FDF model with fixed m.vm
+
+    model, md = create_simplified_fdf_model(model_data, include_feasibility_slack=True, include_v_feasibility_slack=False, **kwargs)
+
+    for b, vm in model.vm.items():
+        vm.value = value(m_ac.vm[b])
+
+    model.vm.fix()
 
 
 def create_simplified_fdf_model(model_data, include_feasibility_slack=False, include_v_feasibility_slack=False, calculation_method=SensitivityCalculationMethod.INVERT):
@@ -129,7 +145,7 @@ def create_simplified_fdf_model(model_data, include_feasibility_slack=False, inc
 
     ### declare the polar voltages
     libbus.declare_var_vm(model, bus_attrs['names'], initialize=bus_attrs['vm'],
-                          #bounds=zip_items(bus_attrs['v_min'], bus_attrs['v_max'])
+                          bounds=zip_items(bus_attrs['v_min'], bus_attrs['v_max'])
                           )
 
     ### include the feasibility slack for the bus balances
@@ -518,16 +534,16 @@ if __name__ == '__main__':
     # display results in dataframes
     print('-pg:')
     compare_results(pg_dict,'fdf','acopf')
-    print(pd.DataFrame(pg_dict))
+#    print(pd.DataFrame(pg_dict))
     print('-qg:')
     compare_results(qg_dict,'fdf','acopf')
-    print(pd.DataFrame(qg_dict))
+#    print(pd.DataFrame(qg_dict))
     print('-pf:')
     compare_results(pf_dict,'fdf','acopf')
-    print(pd.DataFrame(pf_dict))
+#    print(pd.DataFrame(pf_dict))
     print('-qf:')
     compare_results(qf_dict,'fdf','acopf')
-    print(pd.DataFrame(qf_dict))
+#    print(pd.DataFrame(qf_dict))
     print('-ploss:')
     print(ploss_dict)
 #    print(pd.DataFrame(ploss_dict[0]))
@@ -538,7 +554,6 @@ if __name__ == '__main__':
 #    print(pd.DataFrame(va_dict))
     print('-vm:')
     compare_results(vm_dict,'fdf','acopf')
-    print(pd.DataFrame(vm_dict))
 
 
 

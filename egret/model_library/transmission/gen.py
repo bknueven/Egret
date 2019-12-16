@@ -65,6 +65,9 @@ def declare_expression_pgqg_fdf_cost(model, index_set,
     Create the Expression objects to represent the operating costs
     for the real and reactive (if present) power of each of the
     generators.
+    q_costs may be
+        'None': Deviation penalty from base point (Default)
+        '-1':   Zero
     """
     m = model
     expr_set = decl.declare_set('_expr_g_operating_cost',
@@ -80,7 +83,12 @@ def declare_expression_pgqg_fdf_cost(model, index_set,
             m.pg_operating_cost[gen_name] = \
                 sum(v*m.pg[gen_name]**i for i, v in p_costs[gen_name]['values'].items())
 
-        m.qg_operating_cost[gen_name] = 0.1*(m.q_pos[gen_name] + m.q_neg[gen_name])
+        if q_costs is None:
+            m.qg_operating_cost[gen_name] = 0.1*(m.q_pos[gen_name] + m.q_neg[gen_name])
+        elif q_costs is -1:
+            m.qg_operating_cost[gen_name] = 0
+        else:
+            m.qg_operating_cost[gen_name] = 0    # Placeholder for reactive power cost function if available
 
 
 def declare_eq_q_fdf_deviation(model, index_set, gens):
@@ -95,4 +103,4 @@ def declare_eq_q_fdf_deviation(model, index_set, gens):
     m.eq_q_deviation = pe.Constraint(con_set)
 
     for gen_name in con_set:
-        m.eq_q_deviation[gen_name] = gens[gen_name]['qg'] - m.qg[gen_name] == m.q_pos[gen_name] - m.q_neg[gen_name]
+        m.eq_q_deviation[gen_name] = m.qg[gen_name] - gens[gen_name]['qg'] == m.q_pos[gen_name] - m.q_neg[gen_name]
