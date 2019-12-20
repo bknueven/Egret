@@ -394,7 +394,7 @@ def solve_fdf_simplified(model_data,
         Other options to pass into the solver. Default is dict().
     fdf_model_generator : function (optional)
         Function for generating the fdf model. Default is
-        egret.models.acopf.create_fdf_model
+        egret.models.fdf.create_simplified_fdf_model
     return_model : bool (optional)
         If True, returns the pyomo model object
     return_results : bool (optional)
@@ -422,6 +422,7 @@ def solve_fdf_simplified(model_data,
     md.data['results']['time'] = results.Solver.Time
     md.data['results']['#_cons'] = results.Problem[0]['Number of constraints']
     md.data['results']['#_vars'] = results.Problem[0]['Number of variables']
+    md.data['results']['#_nz'] = results.Problem[0]['Number of nonzeros']
     md.data['results']['termination'] = results.solver.termination_condition.__str__()
 
     if results.Solver.status.key == 'ok':

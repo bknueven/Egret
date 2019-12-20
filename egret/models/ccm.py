@@ -351,6 +351,7 @@ def solve_ccm(model_data,
     md.data['results']['time'] = results.Solver.Time
     md.data['results']['#_cons'] = results.Problem[0]['Number of constraints']
     md.data['results']['#_vars'] = results.Problem[0]['Number of variables']
+    md.data['results']['#_nz'] = results.Problem[0]['Number of nonzeros']
     md.data['results']['termination'] = results.solver.termination_condition.__str__()
 
     if results.Solver.status.key == 'ok':

@@ -668,6 +668,14 @@ def _load_solution_to_model_data(m, md):
     from pyomo.environ import value
     from egret.model_library.transmission.tx_utils import unscale_ModelData_to_pu
 
+    if not hasattr(md,'results'):
+        md.data['results'] = dict()
+    md.data['results']['time'] = results.Solver.Time
+    md.data['results']['#_cons'] = results.Problem[0]['Number of constraints']
+    md.data['results']['#_vars'] = results.Problem[0]['Number of variables']
+    md.data['results']['#_nz'] = results.Problem[0]['Number of nonzeros']
+    md.data['results']['termination'] = results.solver.termination_condition.__str__()
+
     # save results data to ModelData object
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))

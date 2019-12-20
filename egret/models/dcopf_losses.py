@@ -367,6 +367,14 @@ def solve_dcopf_losses(model_data,
     m, results, solver = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
                               symbolic_solver_labels=symbolic_solver_labels,options=options, return_solver=True)
 
+    if not hasattr(md,'results'):
+        md.data['results'] = dict()
+    md.data['results']['time'] = results.Solver.Time
+    md.data['results']['#_cons'] = results.Problem[0]['Number of constraints']
+    md.data['results']['#_vars'] = results.Problem[0]['Number of variables']
+    md.data['results']['#_nz'] = results.Problem[0]['Number of nonzeros']
+    md.data['results']['termination'] = results.solver.termination_condition.__str__()
+
     # save results data to ModelData object
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))
