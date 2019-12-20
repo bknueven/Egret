@@ -149,6 +149,11 @@ def inner_loop_solves(md_basepoint, mult, **kwargs):
         loads[k]['p_load'] = init_p_loads[k] * mult
         loads[k]['q_load'] = init_q_loads[k] * mult
 
+    # solve acopf
+    md_ac, m, results = solve_acopf(md, "ipopt", return_model=True, return_results=True, solver_tee=False)
+
+    record_results('test_acopf', mult, md_ac)
+
     if kwargs:
 
         for idx, val in kwargs.items():
@@ -156,39 +161,50 @@ def inner_loop_solves(md_basepoint, mult, **kwargs):
             if val and idx == 'test_ccm':
                 md_ccm, m, results = solve_ccm(md, "ipopt", return_model=True, return_results=True, solver_tee=False)
 
+                record_results(idx, mult, md_ccm)
+
             if val and idx == 'test_lccm':
                 md_lccm, m, results = solve_lccm(md, "gurobi", return_model=True, return_results=True, solver_tee=False)
 
+                record_results(idx, mult, md_lccm)
+
             if val and idx == 'test_fdf':
                 md_fdf, m, results = solve_fdf(md, "gurobi", return_model=True, return_results=True, solver_tee=False)
-                record_results(idx, mult, md_fdf, results)
+
+                record_results(idx, mult, md_fdf)
 
             if val and idx == 'test_fdf_simplified':
                 md_fdfs, m, results = solve_fdf_simplified(md, "gurobi", return_model=True, return_results=True, solver_tee=False)
 
+                record_results(idx, mult, md_fdfs)
+
             if val and idx == 'test_ptdf_losses':
                 md_ptdfl, m, results = solve_dcopf_losses(md, "gurobi", dcopf_losses_model_generator=create_ptdf_losses_dcopf_model,
                                                         return_model=True, return_results=True, solver_tee=False)
+                record_results(idx, mult, md_ptdfl)
 
             if val and idx == 'test_btheta_losses':
                 md_bthetal, m, results = solve_dcopf_losses(md, "gurobi", dcopf_losses_model_generator=create_btheta_losses_dcopf_model,
                                                         return_model=True, return_results=True, solver_tee=False)
+                record_results(idx, mult, md_bthetal)
 
             if val and idx == 'test_ptdf':
                 md_ptdf, m, results = solve_dcopf(md, "gurobi", dcopf_model_generator=create_ptdf_dcopf_model,
                                                 return_model=True, return_results=True, solver_tee=False)
+                record_results(idx, mult, md_ptdf)
 
             if val and idx == 'test_btheta':
                 md_btheta, m, results = solve_dcopf(md, "gurobi", dcopf_model_generator=create_btheta_dcopf_model,
                                                 return_model=True, return_results=True, solver_tee=False)
-                record_results(idx, mult, md_btheta, results)
+                record_results(idx, mult, md_btheta)
 
-def record_results(idx, mult, md, results):
+def record_results(idx, mult, md):
+    '''
+    writes model data (md) object to .json file
+    '''
     filename = md.data['system']['model_name'] + '_' + idx + '_{0:04.0f}'.format(mult*1000)
 
-
-    #md.write_to_json(filename)
-
+    md.write_to_json(filename)
 
 def test_approximation(test_case, init_min=0.9, init_max=1.1, steps=20, **kwargs):
     '''
