@@ -664,7 +664,7 @@ def create_riv_acopf_model(model_data, include_feasibility_slack=False):
     return model, md
 
 
-def _load_solution_to_model_data(m, md):
+def _load_solution_to_model_data(m, md, results):
     from pyomo.environ import value
     from egret.model_library.transmission.tx_utils import unscale_ModelData_to_pu
 
@@ -673,7 +673,7 @@ def _load_solution_to_model_data(m, md):
     md.data['results']['time'] = results.Solver.Time
     md.data['results']['#_cons'] = results.Problem[0]['Number of constraints']
     md.data['results']['#_vars'] = results.Problem[0]['Number of variables']
-    md.data['results']['#_nz'] = results.Problem[0]['Number of nonzeros']
+    #md.data['results']['#_nz'] = results.Problem[0]['Number of nonzeros']
     md.data['results']['termination'] = results.solver.termination_condition.__str__()
 
     # save results data to ModelData object
@@ -772,7 +772,7 @@ def solve_acopf(model_data,
     m, results, solver = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
                               symbolic_solver_labels=symbolic_solver_labels,options=options, return_solver=True)
 
-    _load_solution_to_model_data(m, md)
+    _load_solution_to_model_data(m, md, results)
     #m.pprint()
 
     if return_model and return_results:

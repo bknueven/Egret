@@ -23,7 +23,7 @@ fdf tester vs acopf
     Delete 'caseSummary' and repeat from (1)
     Plot totalSummary: infeasbility vs. solve time of all cases
 '''
-import os
+import os, shutil, glob
 import math
 import unittest
 from pyomo.opt import SolverFactory, TerminationCondition
@@ -205,6 +205,29 @@ def record_results(idx, mult, md):
     filename = md.data['system']['model_name'] + '_' + idx + '_{0:04.0f}'.format(mult*1000)
 
     md.write_to_json(filename)
+    print(filename)
+
+def create_testcase_directory(test_case):
+
+    # directory locations
+    cwd = os.getcwd()
+    case_folder, case = os.path.split(test_case)
+    case, ext = os.path.splitext(case)
+    current_dir, current_file = os.path.split(os.path.realpath(__file__))
+
+    # move to case directory
+    source = os.path.join(cwd, case + '_*.json')
+    destination = os.path.join(current_dir,'transmission_test_instances','approximation_solution_files',case)
+
+    if not os.path.exists(destination):
+        os.makedirs(destination)
+
+    for src in glob.glob(source):
+        print('src:  {}'.format(src))
+        shutil.move(src, destination)
+
+    print('dest: {}'.format(destination))
+
 
 def test_approximation(test_case, init_min=0.9, init_max=1.1, steps=20, **kwargs):
     '''
@@ -225,24 +248,8 @@ def test_approximation(test_case, init_min=0.9, init_max=1.1, steps=20, **kwargs
 
         inner_loop_solves(md_basept, mult, **kwargs)
 
+    create_testcase_directory(test_case)
 
-def test_fdf_model(self, test_case, include_kwargs=False):
-    acopf_model = create_psv_acopf_model
-
-    md_dict = create_ModelData(test_case)
-
-    kwargs = {}
-    if include_kwargs:
-        kwargs = {'include_feasibility_slack':True}
-    md_acopf, m, results = solve_acopf(md_dict, "ipopt", acopf_model_generator=acopf_model, return_model=True, return_results=True, solver_tee=False, **kwargs)
-    filename = md_acopf.data['system']['model_name'] + '_acopf'
-    md_acopf.write_to_json(filename)
-
-    md_fdf, m, results = solve_fdf(md_acopf, "gurobi", return_model=True, return_results=True, solver_tee=False, **kwargs)
-    filename = md_fdf.data['system']['model_name'] + '_fdf'
-    md_fdf.write_to_json(filename)
-
-    self.assertTrue(True)
 
 
 if __name__ == '__main__':
@@ -259,5 +266,5 @@ if __name__ == '__main__':
               'test_btheta' :           True
               }
 
-    test_approximation(test_case, init_min=0.9, init_max=1.1, steps=2, **kwargs)
+    #test_approximation(test_case, init_min=0.9, init_max=1.1, steps=2, **kwargs)
 
