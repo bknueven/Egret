@@ -23,7 +23,10 @@ fdf tester vs acopf
     Delete 'caseSummary' and repeat from (1)
     Plot totalSummary: infeasbility vs. solve time of all cases
 '''
-import os, shutil, glob
+import os, shutil, glob, json
+import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mtick
 import math
 import unittest
 from pyomo.opt import SolverFactory, TerminationCondition
@@ -132,7 +135,7 @@ def multiplier_loop(md, loads, init=0.9, steps=10, acopf_model=create_psv_acopf_
     return final_mult
 
 
-def inner_loop_solves(md_basepoint, mult, **kwargs):
+def inner_loop_solves(md_basepoint, mult, test_model_dict):
     '''
 
     '''
@@ -151,58 +154,57 @@ def inner_loop_solves(md_basepoint, mult, **kwargs):
 
     # solve acopf
     md_ac, m, results = solve_acopf(md, "ipopt", return_model=True, return_results=True, solver_tee=False)
+    md_ac.data['system']['mult'] = mult
+    record_results('acopf', mult, md_ac)
 
-    record_results('test_acopf', mult, md_ac)
+    for idx, val in test_model_dict.items():
 
-    if kwargs:
+        if val and idx == 'ccm':
+            md_ccm, m, results = solve_ccm(md, "ipopt", return_model=True, return_results=True, solver_tee=False)
 
-        for idx, val in kwargs.items():
+            record_results(idx, mult, md_ccm)
 
-            if val and idx == 'test_ccm':
-                md_ccm, m, results = solve_ccm(md, "ipopt", return_model=True, return_results=True, solver_tee=False)
+        if val and idx == 'lccm':
+            md_lccm, m, results = solve_lccm(md, "gurobi", return_model=True, return_results=True, solver_tee=False)
 
-                record_results(idx, mult, md_ccm)
+            record_results(idx, mult, md_lccm)
 
-            if val and idx == 'test_lccm':
-                md_lccm, m, results = solve_lccm(md, "gurobi", return_model=True, return_results=True, solver_tee=False)
+        if val and idx == 'fdf':
+            md_fdf, m, results = solve_fdf(md, "gurobi", return_model=True, return_results=True, solver_tee=False)
 
-                record_results(idx, mult, md_lccm)
+            record_results(idx, mult, md_fdf)
 
-            if val and idx == 'test_fdf':
-                md_fdf, m, results = solve_fdf(md, "gurobi", return_model=True, return_results=True, solver_tee=False)
+        if val and idx == 'fdf_simplified':
+            md_fdfs, m, results = solve_fdf_simplified(md, "gurobi", return_model=True, return_results=True, solver_tee=False)
 
-                record_results(idx, mult, md_fdf)
+            record_results(idx, mult, md_fdfs)
 
-            if val and idx == 'test_fdf_simplified':
-                md_fdfs, m, results = solve_fdf_simplified(md, "gurobi", return_model=True, return_results=True, solver_tee=False)
+        if val and idx == 'ptdf_losses':
+            md_ptdfl, m, results = solve_dcopf_losses(md, "gurobi", dcopf_losses_model_generator=create_ptdf_losses_dcopf_model,
+                                                    return_model=True, return_results=True, solver_tee=False)
+            record_results(idx, mult, md_ptdfl)
 
-                record_results(idx, mult, md_fdfs)
+        if val and idx == 'btheta_losses':
+            md_bthetal, m, results = solve_dcopf_losses(md, "gurobi", dcopf_losses_model_generator=create_btheta_losses_dcopf_model,
+                                                    return_model=True, return_results=True, solver_tee=False)
+            record_results(idx, mult, md_bthetal)
 
-            if val and idx == 'test_ptdf_losses':
-                md_ptdfl, m, results = solve_dcopf_losses(md, "gurobi", dcopf_losses_model_generator=create_ptdf_losses_dcopf_model,
-                                                        return_model=True, return_results=True, solver_tee=False)
-                record_results(idx, mult, md_ptdfl)
+        if val and idx == 'ptdf':
+            md_ptdf, m, results = solve_dcopf(md, "gurobi", dcopf_model_generator=create_ptdf_dcopf_model,
+                                            return_model=True, return_results=True, solver_tee=False)
+            record_results(idx, mult, md_ptdf)
 
-            if val and idx == 'test_btheta_losses':
-                md_bthetal, m, results = solve_dcopf_losses(md, "gurobi", dcopf_losses_model_generator=create_btheta_losses_dcopf_model,
-                                                        return_model=True, return_results=True, solver_tee=False)
-                record_results(idx, mult, md_bthetal)
-
-            if val and idx == 'test_ptdf':
-                md_ptdf, m, results = solve_dcopf(md, "gurobi", dcopf_model_generator=create_ptdf_dcopf_model,
-                                                return_model=True, return_results=True, solver_tee=False)
-                record_results(idx, mult, md_ptdf)
-
-            if val and idx == 'test_btheta':
-                md_btheta, m, results = solve_dcopf(md, "gurobi", dcopf_model_generator=create_btheta_dcopf_model,
-                                                return_model=True, return_results=True, solver_tee=False)
-                record_results(idx, mult, md_btheta)
+        if val and idx == 'btheta':
+            md_btheta, m, results = solve_dcopf(md, "gurobi", dcopf_model_generator=create_btheta_dcopf_model,
+                                            return_model=True, return_results=True, solver_tee=False)
+            record_results(idx, mult, md_btheta)
 
 def record_results(idx, mult, md):
     '''
     writes model data (md) object to .json file
     '''
     filename = md.data['system']['model_name'] + '_' + idx + '_{0:04.0f}'.format(mult*1000)
+    md.data['system']['mult'] = mult
 
     md.write_to_json(filename)
     print(filename)
@@ -222,14 +224,122 @@ def create_testcase_directory(test_case):
     if not os.path.exists(destination):
         os.makedirs(destination)
 
-    for src in glob.glob(source):
-        print('src:  {}'.format(src))
-        shutil.move(src, destination)
+    if not glob.glob(source):
+        print('No files to move.')
+    else:
+        print('dest: {}'.format(destination))
 
-    print('dest: {}'.format(destination))
+        for src in glob.glob(source):
+            print('src:  {}'.format(src))
+            folder, file = os.path.split(src)
+            dest = os.path.join(destination, file) # full destination path will overwrite existing files
+            shutil.move(src, dest)
+
+    return destination
+
+def total_cost(md):
+
+    val = md['system']['total_cost']
+
+    return val
+
+def ploss(md):
+
+    val = md.data['system']['ploss']
+
+    return val
+
+def qloss(md):
+
+    val = md.data['system']['qloss']
+
+    return val
+
+def pgen(md):
+
+    gens = md['elements']['generator']
+    dispatch = {}
+
+    for g,gen in gens.items():
+        dispatch[g] = gen['pg']
+
+    return dispatch
+
+def qgen(md):
+
+    gens = md['elements']['generator']
+    dispatch = {}
+
+    for g,gen in gens.items():
+        dispatch[g] = gen['qg']
+
+    return dispatch
+
+def pflow(md):
+
+    branches = md['elements']['branch']
+    flow = {}
+
+    for b,branch in branches.items():
+        flow[b] = branch['pf']
+
+    return flow
+
+def qflow(md):
+
+    branches = md['elements']['branch']
+    flow = {}
+
+    for b,branch in branches.items():
+        flow[b] = branch['qf']
+
+    return flow
+
+def vmag(md):
+
+    buses = md['elements']['bus']
+    vm = {}
+
+    for b,bus in buses.items():
+        vm[b] = bus['vm']
+
+    return vm
 
 
-def test_approximation(test_case, init_min=0.9, init_max=1.1, steps=20, **kwargs):
+# TODO: write code to calculate infeasibility of pf, pt, qf, qt equations given pg, qg, vm, & th
+def sum_infeas(md):
+    pass
+
+
+def read_sensitivity_data(case_folder, test_model, data_generator=total_cost):
+
+    parent, case = os.path.split(case_folder)
+    filename = case + "_" + test_model + "_*.json"
+    file_list = glob.glob(os.path.join(case_folder, filename))
+
+    print("Reading data for " + test_model + ".")
+
+    data = {}
+    for file in file_list:
+        md = json.load(open(file))
+        mult = md['system']['mult']
+        data[mult] = data_generator(md)
+
+    for d in data:
+
+        data_is_vector = hasattr(data[d], "__len__")
+
+        if data_is_vector:
+            df_data = pd.DataFrame(data)
+            return df_data
+            break
+
+    if not data_is_vector:
+        df_data = pd.DataFrame(data, index=[0])
+        return df_data
+
+
+def solve_approximation_models(test_case, test_model_dict, init_min=0.9, init_max=1.1, steps=20):
     '''
     1. initialize base case and demand range
     2. loop over demand values
@@ -246,9 +356,55 @@ def test_approximation(test_case, init_min=0.9, init_max=1.1, steps=20, **kwargs
 
         mult = round(min_mult + step * inc, 4)
 
-        inner_loop_solves(md_basept, mult, **kwargs)
+        inner_loop_solves(md_basept, mult, test_model_dict)
 
-    create_testcase_directory(test_case)
+
+def generate_plots(test_case, test_model_dict, data_generator=total_cost, vector_norm=2):
+
+    case_location = create_testcase_directory(test_case)
+
+    # acopf comparison
+    df_acopf = read_sensitivity_data(case_location, 'acopf', data_generator=data_generator)
+
+    # empty dataframe to add data into
+    df_data = pd.DataFrame(data=None)
+
+    # iterate over test_model's
+    for test_model, val in test_model_dict.items():
+        if val:
+            df_approx = read_sensitivity_data(case_location, test_model, data_generator=data_generator)
+            df_diff = df_approx - df_acopf
+
+            # calculate norm from df_diff columns
+            data = {}
+            for col in df_diff:
+                colObj = df_diff[col]
+                if len(colObj.values) > 1:
+                    data_is_vector = True
+                    data[col] = np.linalg.norm(colObj.values, vector_norm)
+                else:
+                    data_is_vector = False
+                    data[col] = (colObj.values / df_acopf[col].values) * 100
+
+            # record data in DataFrame
+            df_col = pd.DataFrame(data, index=[test_model])
+            df_data = pd.concat([df_data, df_col])
+
+    # show data in table
+    print('Summary data from {} and L-{} norm for non-scalar values.'.format(data_generator.__name__, vector_norm))
+    df_data = df_data.T
+    print(df_data)
+
+    # show data in graph
+    output = df_data.plot.line()
+    output.set_title(data_generator.__name__)
+
+    if data_is_vector:
+        output.set_ylabel('L-{} norm'.format(vector_norm))
+    else:
+        output.set_ylabel('Relative difference (%)')
+        output.yaxis.set_major_formatter(mtick.PercentFormatter())
+    plt.show()
 
 
 
@@ -256,15 +412,21 @@ if __name__ == '__main__':
 
     test_case = test_cases[0]
 
-    kwargs = {'test_ccm' :              False,
-              'test_lccm' :             False,
-              'test_fdf' :              True,
-              'test_simplified_fdf' :   False,
-              'test_ptdf_losses' :      False,
-              'test_ptdf' :             False,
-              'test_btheta_losses' :    False,
-              'test_btheta' :           True
-              }
+    test_model_dict = \
+        {'ccm' :              False,
+         'lccm' :             False,
+         'fdf' :              True,
+         'simplified_fdf' :   False,
+         'ptdf_losses' :      False,
+         'ptdf' :             False,
+         'btheta_losses' :    False,
+         'btheta' :           True
+         }
 
-    #test_approximation(test_case, init_min=0.9, init_max=1.1, steps=2, **kwargs)
+    solve_approximation_models(test_case, test_model_dict, init_min=0.9, init_max=1.1, steps=10)
+    generate_plots(test_case, test_model_dict, data_generator=total_cost)
+    generate_plots(test_case, test_model_dict, data_generator=ploss)
+    generate_plots(test_case, test_model_dict, data_generator=pgen, vector_norm=2)
+    generate_plots(test_case, test_model_dict, data_generator=pflow, vector_norm=2)
+    generate_plots(test_case, test_model_dict, data_generator=vm, vector_norm=2)
 
