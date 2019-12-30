@@ -466,12 +466,14 @@ def solve_dcopf(model_data,
             b_dict = buses[b]
             b_dict['lmp'] = LMPE + LMPC[i]
             b_dict['pl'] = value(m.pl[b])
+            b_dict['vm'] = 1.0
     else:
         for b,b_dict in buses.items():
             b_dict['pl'] = value(m.pl[b])
             if dcopf_model_generator == create_btheta_dcopf_model:
                 b_dict['lmp'] = value(m.dual[m.eq_p_balance[b]])
                 b_dict['va'] = value(m.va[b])
+                b_dict['vm'] = 1.0
             else:
                 raise Exception("Unrecognized dcopf_mode_generator {}".format(dcopf_model_generator))
 

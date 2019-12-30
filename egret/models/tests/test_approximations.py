@@ -245,13 +245,13 @@ def total_cost(md):
 
 def ploss(md):
 
-    val = md.data['system']['ploss']
+    val = md['system']['ploss']
 
     return val
 
 def qloss(md):
 
-    val = md.data['system']['qloss']
+    val = md['system']['qloss']
 
     return val
 
@@ -359,9 +359,10 @@ def solve_approximation_models(test_case, test_model_dict, init_min=0.9, init_ma
         inner_loop_solves(md_basept, mult, test_model_dict)
 
 
-def generate_plots(test_case, test_model_dict, data_generator=total_cost, vector_norm=2):
+def generate_sensitivity_plot(test_case, test_model_dict, data_generator=total_cost, vector_norm=2, show_plot=False):
 
     case_location = create_testcase_directory(test_case)
+    src_folder, case_name = os.path.split(test_case)
 
     # acopf comparison
     df_acopf = read_sensitivity_data(case_location, 'acopf', data_generator=data_generator)
@@ -391,26 +392,41 @@ def generate_plots(test_case, test_model_dict, data_generator=total_cost, vector
             df_data = pd.concat([df_data, df_col])
 
     # show data in table
-    print('Summary data from {} and L-{} norm for non-scalar values.'.format(data_generator.__name__, vector_norm))
+    y_axis_data = data_generator.__name__
+    print('Summary data from {} and L-{} norm for non-scalar values.'.format(y_axis_data, vector_norm))
     df_data = df_data.T
     print(df_data)
 
     # show data in graph
     output = df_data.plot.line()
-    output.set_title(data_generator.__name__)
+    output.set_title(y_axis_data)
+    output.set_xlabel("Demand Multiplier")
 
     if data_is_vector:
+        filename = "sensitivityplot_" + case_name + "_" + y_axis_data + "_L{}_norm".format(vector_norm)
         output.set_ylabel('L-{} norm'.format(vector_norm))
     else:
+        filename = "sensitivityplot_" + case_name + "_" + y_axis_data + "_pctDiff".format(vector_norm)
         output.set_ylabel('Relative difference (%)')
         output.yaxis.set_major_formatter(mtick.PercentFormatter())
-    plt.show()
 
+    #save to destination folder
+    destination = os.path.join(case_location, 'plots')
+
+    if not os.path.exists(destination):
+        os.makedirs(destination)
+
+    plt.savefig(os.path.join(destination, filename))
+
+    # display
+    if show_plot is True:
+        plt.show()
 
 
 if __name__ == '__main__':
 
-    test_case = test_cases[0]
+    test_case = test_cases[1]
+    print(test_case)
 
     test_model_dict = \
         {'ccm' :              False,
@@ -423,10 +439,10 @@ if __name__ == '__main__':
          'btheta' :           True
          }
 
-    solve_approximation_models(test_case, test_model_dict, init_min=0.9, init_max=1.1, steps=10)
-    generate_plots(test_case, test_model_dict, data_generator=total_cost)
-    generate_plots(test_case, test_model_dict, data_generator=ploss)
-    generate_plots(test_case, test_model_dict, data_generator=pgen, vector_norm=2)
-    generate_plots(test_case, test_model_dict, data_generator=pflow, vector_norm=2)
-    generate_plots(test_case, test_model_dict, data_generator=vm, vector_norm=2)
+    #solve_approximation_models(test_case, test_model_dict, init_min=0.9, init_max=1.1, steps=10)
+    generate_sensitivity_plot(test_case, test_model_dict, data_generator=total_cost)
+    generate_sensitivity_plot(test_case, test_model_dict, data_generator=ploss)
+    generate_sensitivity_plot(test_case, test_model_dict, data_generator=pgen, vector_norm=2)
+    generate_sensitivity_plot(test_case, test_model_dict, data_generator=pflow, vector_norm=2)
+    generate_sensitivity_plot(test_case, test_model_dict, data_generator=vmag, vector_norm=2)
 
