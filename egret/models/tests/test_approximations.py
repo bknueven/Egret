@@ -403,10 +403,10 @@ def generate_sensitivity_plot(test_case, test_model_dict, data_generator=total_c
     output.set_xlabel("Demand Multiplier")
 
     if data_is_vector:
-        filename = "sensitivityplot_" + case_name + "_" + y_axis_data + "_L{}_norm".format(vector_norm)
+        filename = "sensitivityplot_" + case_name + "_" + y_axis_data + "_L{}_norm.png".format(vector_norm)
         output.set_ylabel('L-{} norm'.format(vector_norm))
     else:
-        filename = "sensitivityplot_" + case_name + "_" + y_axis_data + "_pctDiff".format(vector_norm)
+        filename = "sensitivityplot_" + case_name + "_" + y_axis_data + "_pctDiff.png"
         output.set_ylabel('Relative difference (%)')
         output.yaxis.set_major_formatter(mtick.PercentFormatter())
 
