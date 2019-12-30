@@ -363,6 +363,7 @@ def generate_sensitivity_plot(test_case, test_model_dict, data_generator=total_c
 
     case_location = create_testcase_directory(test_case)
     src_folder, case_name = os.path.split(test_case)
+    case_name, ext = os.path.splitext(case_name)
 
     # acopf comparison
     df_acopf = read_sensitivity_data(case_location, 'acopf', data_generator=data_generator)
