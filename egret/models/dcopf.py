@@ -432,6 +432,8 @@ def solve_dcopf(model_data,
     branches = dict(md.elements(element_type='branch'))
 
     md.data['system']['total_cost'] = value(m.obj)
+    md.data['system']['ploss'] = 0
+    md.data['system']['qloss'] = 0
 
     for g,g_dict in gens.items():
         g_dict['pg'] = value(m.pg[g])

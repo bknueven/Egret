@@ -239,25 +239,25 @@ def create_testcase_directory(test_case):
 
 def total_cost(md):
 
-    val = md['system']['total_cost']
+    val = md.data['system']['total_cost']
 
     return val
 
 def ploss(md):
 
-    val = md['system']['ploss']
+    val = md.data['system']['ploss']
 
     return val
 
 def qloss(md):
 
-    val = md['system']['qloss']
+    val = md.data['system']['qloss']
 
     return val
 
 def pgen(md):
 
-    gens = md['elements']['generator']
+    gens = dict(md.elements(element_type='generator'))
     dispatch = {}
 
     for g,gen in gens.items():
@@ -267,7 +267,7 @@ def pgen(md):
 
 def qgen(md):
 
-    gens = md['elements']['generator']
+    gens = dict(md.elements(element_type='generator'))
     dispatch = {}
 
     for g,gen in gens.items():
@@ -277,7 +277,7 @@ def qgen(md):
 
 def pflow(md):
 
-    branches = md['elements']['branch']
+    branches = dict(md.elements(element_type='branch'))
     flow = {}
 
     for b,branch in branches.items():
@@ -287,7 +287,7 @@ def pflow(md):
 
 def qflow(md):
 
-    branches = md['elements']['branch']
+    branches = dict(md.elements(element_type='branch'))
     flow = {}
 
     for b,branch in branches.items():
@@ -297,7 +297,7 @@ def qflow(md):
 
 def vmag(md):
 
-    buses = md['elements']['bus']
+    buses = dict(md.elements(element_type='bus'))
     vm = {}
 
     for b,bus in buses.items():
@@ -306,9 +306,61 @@ def vmag(md):
     return vm
 
 
-# TODO: write code to calculate infeasibility of pf, pt, qf, qt equations given pg, qg, vm, & th
 def sum_infeas(md):
-    pass
+
+    from egret.common.solver_interface import _solve_model
+    from pyomo.environ import value
+
+    # calculate AC branch flows from vmag and angle
+    #calculate_flows(md)
+
+    # calculate bus power balance from bus injections and AC power flows
+    #calculate_balance(md)
+
+    #--- alternate: build ACOPF model
+    m_ac, md_ac = create_psv_acopf_model(md, include_feasibility_slack=True)
+
+    # ModelData components
+    gens = dict(md.elements(element_type='generator'))
+    buses = dict(md.elements(element_type='bus'))
+    branches = dict(md.elements(element_type='branch'))
+    loads = dict(md.elements(element_type='load'))
+    shunts = dict(md.elements(element_type='shunt'))
+
+    gen_attrs = md.attributes(element_type='generator')
+    bus_attrs = md.attributes(element_type='bus')
+    branch_attrs = md.attributes(element_type='branch')
+    load_attrs = md.attributes(element_type='load')
+    shunt_attrs = md.attributes(element_type='shunt')
+
+    ### declare (and fix) the loads at the buses
+    bus_p_loads, bus_q_loads = tx_utils.dict_of_bus_loads(buses, loads)
+
+    # fix variables to the values in modeData object md
+    for g, pg in m_ac.pg.items():
+        pg.value = gens[g]['pg']
+    for g, qg in m_ac.qg.items():
+        qg.value = gens[g]['qg']
+    for b, va in m_ac.va.items():
+        va.value = buses[b]['va']
+    for b, vm in m_ac.vm.items():
+        vm.value = buses[b]['vm']
+
+    # set objective to sum of infeasibilities (i.e. slacks)
+    m_ac.del_component(m_ac.obj)
+    penalty_expr = sum(m_ac.p_slack_pos[bus_name] + m_ac.p_slack_neg[bus_name]
+                       + m_ac.q_slack_pos[bus_name] + m_ac.q_slack_neg[bus_name]
+                       for bus_name in bus_attrs['names'])
+    m_ac.obj = pe.Objective(expr=penalty_expr)
+
+    # solve model
+    m_ac, results = _solve_model(m_ac, "ipopt", timelimit=None, solver_tee=False, symbolic_solver_labels=False,
+                              options=None, return_solver=False)
+    sum_infeas = value(m_ac.obj)
+
+    print('{}: infeas={}'.format(md.data['system']['mult'], sum_infeas))
+
+    return sum_infeas
 
 
 def read_sensitivity_data(case_folder, test_model, data_generator=total_cost):
@@ -321,8 +373,9 @@ def read_sensitivity_data(case_folder, test_model, data_generator=total_cost):
 
     data = {}
     for file in file_list:
-        md = json.load(open(file))
-        mult = md['system']['mult']
+        md_dict = json.load(open(file))
+        md = ModelData(md_dict)
+        mult = md.data['system']['mult']
         data[mult] = data_generator(md)
 
     for d in data:
@@ -401,6 +454,7 @@ def generate_sensitivity_plot(test_case, test_model_dict, data_generator=total_c
     # show data in graph
     output = df_data.plot.line()
     output.set_title(y_axis_data)
+    output.set_ylim(top=0)
     output.set_xlabel("Demand Multiplier")
 
     if data_is_vector:
@@ -426,7 +480,7 @@ def generate_sensitivity_plot(test_case, test_model_dict, data_generator=total_c
 
 if __name__ == '__main__':
 
-    test_case = test_cases[1]
+    test_case = test_cases[0]
     print(test_case)
 
     test_model_dict = \
@@ -440,10 +494,12 @@ if __name__ == '__main__':
          'btheta' :           True
          }
 
-    #solve_approximation_models(test_case, test_model_dict, init_min=0.9, init_max=1.1, steps=10)
-    generate_sensitivity_plot(test_case, test_model_dict, data_generator=total_cost)
-    generate_sensitivity_plot(test_case, test_model_dict, data_generator=ploss)
-    generate_sensitivity_plot(test_case, test_model_dict, data_generator=pgen, vector_norm=2)
-    generate_sensitivity_plot(test_case, test_model_dict, data_generator=pflow, vector_norm=2)
-    generate_sensitivity_plot(test_case, test_model_dict, data_generator=vmag, vector_norm=2)
+    solve_approximation_models(test_case, test_model_dict, init_min=0.9, init_max=1.1, steps=2)
+    generate_sensitivity_plot(test_case, test_model_dict, data_generator=sum_infeas, show_plot=True)
+    #generate_sensitivity_plot(test_case, test_model_dict, data_generator=sum_infeas)
+    #generate_sensitivity_plot(test_case, test_model_dict, data_generator=total_cost)
+    #generate_sensitivity_plot(test_case, test_model_dict, data_generator=ploss)
+    #generate_sensitivity_plot(test_case, test_model_dict, data_generator=pgen, vector_norm=2)
+    #generate_sensitivity_plot(test_case, test_model_dict, data_generator=pflow, vector_norm=2)
+    #generate_sensitivity_plot(test_case, test_model_dict, data_generator=vmag, vector_norm=2)
 

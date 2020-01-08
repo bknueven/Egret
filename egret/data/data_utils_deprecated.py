@@ -24,14 +24,20 @@ def create_dicts_of_fdf(md, base_point=BasePointType.SOLUTION):
     reference_bus = md.data['system']['reference_bus']
     ptdf, ptdf_c, pldf, pldf_c = tx_calc.calculate_ptdf_pldf(branches, buses, branch_attrs['names'], bus_attrs['names'],
                                                     reference_bus, base_point)
+    qtdf, qtdf_c, qldf, qldf_c, vdf, vdf_c = tx_calc.calculate_qtdf_qldf_vdf(branches, buses, branch_attrs['names'],
+                                                    bus_attrs['names'], reference_bus, base_point)
+
+    Ft, ft_c, Fv, fv_c = tx_calc.calculate_lccm_flow_sensitivies(branches, buses, branch_attrs['names'], bus_attrs['names'],
+                                    reference_bus, base_point)
+    Lt, lt_c, Lv, lv_c = tx_calc.calculate_lccm_loss_sensitivies(branches, buses, branch_attrs['names'], bus_attrs['names'],
+                                    reference_bus, base_point)
+
+    # TODO: check if phi-constants are used anywhere
     phi_from, phi_to = tx_calc.calculate_phi_constant(branches, branch_attrs['names'], bus_attrs['names'],
                                                       ApproximationType.PTDF_LOSSES)
     phi_loss_from, phi_loss_to = tx_calc.calculate_phi_loss_constant(branches, branch_attrs['names'],
                                                                      bus_attrs['names'], ApproximationType.PTDF_LOSSES)
 
-    qtdf, qtdf_c, qldf, qldf_c, vdf, vdf_c = tx_calc.calculate_qtdf_qldf_vdf(branches, buses, branch_attrs['names'],
-                                                                              bus_attrs['names'], reference_bus,
-                                                                              base_point)
 
     phi_q_from, phi_q_to = tx_calc.calculate_phi_q_constant(branches, branch_attrs['names'], bus_attrs['names'])
     phi_loss_q_from, phi_loss_q_to = tx_calc.calculate_phi_loss_q_constant(branches, branch_attrs['names'], bus_attrs['names'])
@@ -63,6 +69,20 @@ def create_dicts_of_fdf(md, base_point=BasePointType.SOLUTION):
         branch['qtdf_c'] = qtdf_c[idx]
 
         branch['qldf_c'] = qldf_c[idx]
+
+        # sparse sensitivities to voltage angle and magnitude
+        _row_Ft = {bus_attrs['names'][i]: Ft[idx, i] for i in list(range(0, _len_bus))}
+        _row_Fv = {bus_attrs['names'][i]: Fv[idx, i] for i in list(range(0, _len_bus))}
+        _row_Lt = {bus_attrs['names'][i]: Lt[idx, i] for i in list(range(0, _len_bus))}
+        _row_Lv = {bus_attrs['names'][i]: Lv[idx, i] for i in list(range(0, _len_bus))}
+        branch['Ft'] = _row_Ft
+        branch['Fv'] = _row_Fv
+        branch['Lt'] = _row_Lt
+        branch['Lv'] = _row_Lv
+        branch['ft_c'] = ft_c[idx]
+        branch['fv_c'] = fv_c[idx]
+        branch['lt_c'] = lt_c[idx]
+        branch['lv_c'] = lv_c[idx]
 
 
     for idx, bus_name in _mapping_bus.items():

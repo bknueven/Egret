@@ -322,6 +322,7 @@ def create_simplified_fdf_model(model_data, include_feasibility_slack=False, inc
 def _load_solution_to_model_data(m, md, results):
     from pyomo.environ import value
     from egret.model_library.transmission.tx_utils import unscale_ModelData_to_pu
+    from egret.models.fdf import _linsolve_m_va
 
     # save results data to ModelData object
     gens = dict(md.elements(element_type='generator'))
@@ -332,6 +333,8 @@ def _load_solution_to_model_data(m, md, results):
     md.data['system']['total_cost'] = value(m.obj)
     md.data['system']['ploss'] = value(m.ploss)
     md.data['system']['qloss'] = value(m.qloss)
+
+    _linsolve_m_va(m, md, branches, buses)
 
     for g,g_dict in gens.items():
         g_dict['pg'] = value(m.pg[g])
