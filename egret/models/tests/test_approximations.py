@@ -311,16 +311,11 @@ def sum_infeas(md):
     from egret.common.solver_interface import _solve_model
     from pyomo.environ import value
 
-    # calculate AC branch flows from vmag and angle
-    #calculate_flows(md)
-
-    # calculate bus power balance from bus injections and AC power flows
-    #calculate_balance(md)
-
-    #--- alternate: build ACOPF model
+    # build ACOPF model with fixed gen output, fixed voltage angle/mag, and relaxed power balance
     m_ac, md_ac = create_psv_acopf_model(md, include_feasibility_slack=True)
 
-    # ModelData components
+    tx_utils.scale_ModelData_to_pu(md, inplace=True)
+
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))
     branches = dict(md.elements(element_type='branch'))
@@ -334,7 +329,7 @@ def sum_infeas(md):
     shunt_attrs = md.attributes(element_type='shunt')
 
     ### declare (and fix) the loads at the buses
-    bus_p_loads, bus_q_loads = tx_utils.dict_of_bus_loads(buses, loads)
+    #bus_p_loads, bus_q_loads = tx_utils.dict_of_bus_loads(buses, loads)
 
     # fix variables to the values in modeData object md
     for g, pg in m_ac.pg.items():
@@ -346,6 +341,11 @@ def sum_infeas(md):
     for b, vm in m_ac.vm.items():
         vm.value = buses[b]['vm']
 
+    m_ac.pg.fix()
+    m_ac.qg.fix()
+    m_ac.va.fix()
+    m_ac.vm.fix()
+
     # set objective to sum of infeasibilities (i.e. slacks)
     m_ac.del_component(m_ac.obj)
     penalty_expr = sum(m_ac.p_slack_pos[bus_name] + m_ac.p_slack_neg[bus_name]
@@ -354,11 +354,16 @@ def sum_infeas(md):
     m_ac.obj = pe.Objective(expr=penalty_expr)
 
     # solve model
-    m_ac, results = _solve_model(m_ac, "ipopt", timelimit=None, solver_tee=False, symbolic_solver_labels=False,
-                              options=None, return_solver=False)
+    print('{}'.format(md.data['system']['mult']))
+    m_ac, results = _solve_model(m_ac, "ipopt", timelimit=None, solver_tee=False)
+
+    tx_utils.unscale_ModelData_to_pu(md, inplace=True)
+
     sum_infeas = value(m_ac.obj)
 
-    print('{}: infeas={}'.format(md.data['system']['mult'], sum_infeas))
+    show_me = results.solver.termination_condition.__str__()
+    print('...{}...infeas = {}'.format(show_me, sum_infeas))
+
 
     return sum_infeas
 
@@ -494,7 +499,7 @@ if __name__ == '__main__':
          'btheta' :           True
          }
 
-    solve_approximation_models(test_case, test_model_dict, init_min=0.9, init_max=1.1, steps=2)
+    #solve_approximation_models(test_case, test_model_dict, init_min=0.9, init_max=1.1, steps=2)
     generate_sensitivity_plot(test_case, test_model_dict, data_generator=sum_infeas, show_plot=True)
     #generate_sensitivity_plot(test_case, test_model_dict, data_generator=sum_infeas)
     #generate_sensitivity_plot(test_case, test_model_dict, data_generator=total_cost)
