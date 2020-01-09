@@ -505,45 +505,6 @@ def create_ccm_model(model_data, include_feasibility_slack=False, include_v_feas
     return model, md
 
 
-def _linsolve_m_va(m, md, branches, buses):
-    import numpy as np
-    from pyomo.environ import value
-    from egret.model_library.transmission.tx_calc import _calculate_J11
-
-    bus_attrs = md.attributes(element_type='bus')
-    branch_attrs = md.attributes(element_type='branch')
-    reference_bus = md.data['system']['reference_bus']
-    _len_branches = len(branch_attrs['names'])
-
-    mapping_branch_to_idx = {name: i for i, name in enumerate(branch_attrs['names'])}
-    mapping_bus_to_idx = {name: i for i, name in enumerate(bus_attrs['names'])}
-
-    Ft, ft_c, Fv, fv_c = tx_calc.calculate_lccm_flow_sensitivies(branches, buses, branch_attrs['names'],
-                                                                 bus_attrs['names'], reference_bus)
-
-    # put real power flows in an array m_pf
-    m_pf = np.zeros(_len_branches)
-    for b, branch in branches.items():
-        idx = mapping_branch_to_idx[b]
-        m_pf[idx] = value(m.pf[b])
-
-    # remove reference bus column of Ft
-    ref = mapping_bus_to_idx[reference_bus]
-    Ft = Ft.toarray()
-    Ft[ref,:] = 0
-    Ft[ref,ref] = 1
-
-    # solve linear equation for voltage angles theta
-    b = m_pf - ft_c
-    b[ref] = 0
-    theta = np.linalg.solve(Ft, b)
-
-    # save to md
-    for b, b_dict in buses.items():
-        idx = mapping_bus_to_idx[b]
-        b_dict['va'] = theta[idx]
-
-
 
 def _load_solution_to_model_data(m, md, results):
     from pyomo.environ import value
@@ -554,11 +515,14 @@ def _load_solution_to_model_data(m, md, results):
     buses = dict(md.elements(element_type='bus'))
     branches = dict(md.elements(element_type='branch'))
 
+    bus_attrs = md.attributes(element_type='bus')
+    mapping_bus_to_idx = {bus_n: i for i, bus_n in enumerate(bus_attrs['names'])}
+
+    theta = tx_calc.linsolve_theta_fdf(m, md)
+
     md.data['system']['total_cost'] = value(m.obj)
     md.data['system']['ploss'] = sum(value(m.pfl[b]) for b,b_dict in branches.items())
     md.data['system']['qloss'] = sum(value(m.qfl[b]) for b,b_dict in branches.items())
-
-    _linsolve_m_va(m, md, branches, buses)
 
     for g,g_dict in gens.items():
         g_dict['pg'] = value(m.pg[g])
@@ -568,6 +532,9 @@ def _load_solution_to_model_data(m, md, results):
         b_dict['pl'] = value(m.pl[b])
         b_dict['ql'] = value(m.ql[b])
         b_dict['vm'] = value(m.vm[b])
+
+        idx = mapping_bus_to_idx[b]
+        b_dict['va'] = theta[idx]
 
         b_dict['lmp'] = value(m.dual[m.eq_p_balance])
         b_dict['qlmp'] = value(m.dual[m.eq_q_balance])

@@ -307,6 +307,10 @@ def vmag(md):
 
 
 def sum_infeas(md):
+    '''
+    Seturns sum of power balance slack variables (i.e., infeasibilites)
+    Note: returned value is in p.u.
+    '''
 
     from egret.common.solver_interface import _solve_model
     from pyomo.environ import value
@@ -357,13 +361,12 @@ def sum_infeas(md):
     print('{}'.format(md.data['system']['mult']))
     m_ac, results = _solve_model(m_ac, "ipopt", timelimit=None, solver_tee=False)
 
-    tx_utils.unscale_ModelData_to_pu(md, inplace=True)
-
     sum_infeas = value(m_ac.obj)
 
     show_me = results.solver.termination_condition.__str__()
     print('...{}...infeas = {}'.format(show_me, sum_infeas))
 
+    tx_utils.unscale_ModelData_to_pu(md, inplace=True)
 
     return sum_infeas
 
@@ -485,7 +488,7 @@ def generate_sensitivity_plot(test_case, test_model_dict, data_generator=total_c
 
 if __name__ == '__main__':
 
-    test_case = test_cases[0]
+    test_case = test_cases[5]
     print(test_case)
 
     test_model_dict = \
@@ -499,7 +502,7 @@ if __name__ == '__main__':
          'btheta' :           True
          }
 
-    #solve_approximation_models(test_case, test_model_dict, init_min=0.9, init_max=1.1, steps=2)
+    solve_approximation_models(test_case, test_model_dict, init_min=0.9, init_max=1.1, steps=20)
     generate_sensitivity_plot(test_case, test_model_dict, data_generator=sum_infeas, show_plot=True)
     #generate_sensitivity_plot(test_case, test_model_dict, data_generator=sum_infeas)
     #generate_sensitivity_plot(test_case, test_model_dict, data_generator=total_cost)
