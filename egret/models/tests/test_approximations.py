@@ -93,12 +93,14 @@ def set_acopf_basepoint_min_max(md_dict, init_min=0.9, init_max=1.1, **kwargs):
     return md_basept, mult_min, mult_max
 
 
-def multiplier_loop(md, loads, init=0.9, steps=10, acopf_model=create_psv_acopf_model):
+def multiplier_loop(model_data, loads, init=0.9, steps=10, acopf_model=create_psv_acopf_model):
     '''
     init < 1 searches for the lowest demand multiplier >= init that has an optimal acopf solution
     init > 1 searches for the highest demand multiplier <= init that has an optimal acopf solution
     steps determines the increments in [init, 1] where the search is made
     '''
+
+    md = model_data.clone_in_service()
 
     # step size
     inc = abs(1 - init) / steps
