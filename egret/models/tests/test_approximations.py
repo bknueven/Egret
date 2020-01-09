@@ -108,14 +108,17 @@ def multiplier_loop(md, loads, init=0.9, steps=10, acopf_model=create_psv_acopf_
     init_q_loads = {k: loads[k]['q_load'] for k in loads.keys()}
 
     # loop
-    for step in range(0,steps):
+    for step in range(1,steps+1):
 
         # for finding minimum
         if init < 1:
-            mult = round(init + step * inc, 4)
+            #mult = round(init + step * inc, 4)
+            mult = round(1.0 - step * inc, 4)
+
         # for finding maximum
         elif init > 1:
-            mult = round(init - step * inc, 4)
+            #mult = round(init - step * inc, 4)
+            mult = round(1.0 + step * inc, 4)
 
         # adjust load from init_min
         for k in loads.keys():
@@ -126,11 +129,22 @@ def multiplier_loop(md, loads, init=0.9, steps=10, acopf_model=create_psv_acopf_
 
         if results.solver.termination_condition==TerminationCondition.optimal:
             final_mult = mult
+            print('Optimal solution found for mult={}'.format(mult))
+
+        elif step == 0:
+            final_mult = None
+            condition = results.solver.termination_condition.__str__
+            print('Base case solution returns {} instead of optimal. Check input case.'.format(condition))
             break
 
-        if step == steps:
+        elif step == 1:
             final_mult = 1
             print('Found no optimal solutions with mult != 1. Try init between 1 and {}.'.format(mult))
+            break
+
+        else:
+            print('mult={} is infeasible. Ending search.'.format(mult))
+            break
 
     return final_mult
 
