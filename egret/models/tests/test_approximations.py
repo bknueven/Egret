@@ -87,13 +87,13 @@ def set_acopf_basepoint_min_max(md_dict, init_min=0.9, init_max=1.1, **kwargs):
 
     # find feasible min and max demand multipliers
     else:
-        mult_min = multiplier_loop(md, loads, init=init_min, steps=10, acopf_model=acopf_model)
-        mult_max = multiplier_loop(md, loads, init=init_max, steps=10, acopf_model=acopf_model)
+        mult_min = multiplier_loop(md, init=init_min, steps=10, acopf_model=acopf_model)
+        mult_max = multiplier_loop(md, init=init_max, steps=10, acopf_model=acopf_model)
 
     return md_basept, mult_min, mult_max
 
 
-def multiplier_loop(model_data, loads, init=0.9, steps=10, acopf_model=create_psv_acopf_model):
+def multiplier_loop(model_data, init=0.9, steps=10, acopf_model=create_psv_acopf_model):
     '''
     init < 1 searches for the lowest demand multiplier >= init that has an optimal acopf solution
     init > 1 searches for the highest demand multiplier <= init that has an optimal acopf solution
@@ -101,6 +101,8 @@ def multiplier_loop(model_data, loads, init=0.9, steps=10, acopf_model=create_ps
     '''
 
     md = model_data.clone_in_service()
+
+    loads = dict(md.elements(element_type='load'))
 
     # step size
     inc = abs(1 - init) / steps
@@ -110,43 +112,34 @@ def multiplier_loop(model_data, loads, init=0.9, steps=10, acopf_model=create_ps
     init_q_loads = {k: loads[k]['q_load'] for k in loads.keys()}
 
     # loop
-    for step in range(1,steps+1):
+    final_mult = None
+    for step in range(0,steps):
 
         # for finding minimum
         if init < 1:
-            #mult = round(init + step * inc, 4)
-            mult = round(1.0 - step * inc, 4)
+            mult = round(init - step * inc, 4)
 
         # for finding maximum
         elif init > 1:
-            #mult = round(init - step * inc, 4)
-            mult = round(1.0 + step * inc, 4)
+            mult = round(init - step * inc, 4)
 
         # adjust load from init_min
         for k in loads.keys():
             loads[k]['p_load'] = init_p_loads[k] * mult
             loads[k]['q_load'] = init_q_loads[k] * mult
 
-        md_, results = solve_acopf(md, "ipopt", acopf_model_generator=acopf_model, return_model=False, return_results=True, solver_tee=False)
-
-        if results.solver.termination_condition==TerminationCondition.optimal:
+        try:
+            md_, results = solve_acopf(md, "ipopt", acopf_model_generator=acopf_model, return_model=False, return_results=True, solver_tee=False)
             final_mult = mult
-            print('Optimal solution found for mult={}'.format(mult))
-
-        elif step == 0:
-            final_mult = None
-            condition = results.solver.termination_condition.__str__
-            print('Base case solution returns {} instead of optimal. Check input case.'.format(condition))
+            print('mult={} has an acceptable solution.'.format(mult))
             break
 
-        elif step == 1:
-            final_mult = 1
-            print('Found no optimal solutions with mult != 1. Try init between 1 and {}.'.format(mult))
-            break
+        except Exception:
+            print('mult={} raises an error. Continuing search.'.format(mult))
 
-        else:
-            print('mult={} is infeasible. Ending search.'.format(mult))
-            break
+    if final_mult is None:
+        print('Found no acceptable solutions with mult != 1. Try init between 1 and {}.'.format(mult))
+
 
     return final_mult
 
@@ -167,6 +160,8 @@ def inner_loop_solves(md_basepoint, mult, test_model_dict):
     for k in loads.keys():
         loads[k]['p_load'] = init_p_loads[k] * mult
         loads[k]['q_load'] = init_q_loads[k] * mult
+
+    print('mult={}'.format(mult))
 
     # solve acopf
     md_ac, m, results = solve_acopf(md, "ipopt", return_model=True, return_results=True, solver_tee=False)
@@ -321,6 +316,23 @@ def vmag(md):
 
     return vm
 
+def create_sum_infeas_model(model_data, acopf_model_generator=create_psv_acopf_model):
+
+    m, md = create_psv_acopf_model(model_data, include_feasibility_slack=True)
+
+    m.pf.setlb(None)
+    m.pf.setub(None)
+    m.pt.setlb(None)
+    m.pt.setub(None)
+    m.qf.setlb(None)
+    m.qf.setub(None)
+    m.pf.setlb(None)
+    m.pf.setub(None)
+    m.pf.setlb(None)
+    m.pf.setub(None)
+
+
+
 
 def sum_infeas(md):
     '''
@@ -332,6 +344,7 @@ def sum_infeas(md):
     from pyomo.environ import value
 
     # build ACOPF model with fixed gen output, fixed voltage angle/mag, and relaxed power balance
+    #m_ac, md_ac = create_sum_infeas_model(md, acopf_model_generator=create_psv_acopf_model)
     m_ac, md_ac = create_psv_acopf_model(md, include_feasibility_slack=True)
 
     tx_utils.scale_ModelData_to_pu(md, inplace=True)
@@ -366,15 +379,78 @@ def sum_infeas(md):
     m_ac.va.fix()
     m_ac.vm.fix()
 
+    # remove power flow variable bounds
+    for b, pf in m_ac.pf.items():
+        pf.setlb(None)
+        pf.setub(None)
+    for b, pt in m_ac.pt.items():
+        pt.setlb(None)
+        pt.setub(None)
+    for b, qf in m_ac.qf.items():
+        qf.setlb(None)
+        qf.setub(None)
+    for b, qt in m_ac.qt.items():
+        qt.setlb(None)
+        qt.setub(None)
+
+    # add slack variable to thermal limit constraints
+    m_ac.del_component(m_ac.ineq_sf_branch_thermal_limit)
+    m_ac.del_component(m_ac.ineq_st_branch_thermal_limit)
+    s_thermal_limits = {k: branches[k]['rating_long_term'] for k in branches.keys()}
+    slack_init = {k: 0 for k in branch_attrs['names']}
+    slack_bounds = {k: (0, s_thermal_limits[k]) for k in branches.keys()}
+
+    decl.declare_var('sf_branch_slack_pos', model=m_ac, index_set=branch_attrs['names'],
+                     initialize=slack_init, bounds=slack_bounds
+                     )
+    decl.declare_var('st_branch_slack_pos', model=m_ac, index_set=branch_attrs['names'],
+                     initialize=slack_init, bounds=slack_bounds
+                     )
+
+    try:
+        con_set = m_ac._con_ineq_s_branch_thermal_limit
+    except:
+        con_set = decl.declare_set('_con_ineq_s_branch_thermal_limit', model=m_ac, index_set=branch_attrs['names'])
+
+    m_ac.ineq_sf_branch_thermal_limit = pe.Constraint(con_set)
+    m_ac.ineq_st_branch_thermal_limit = pe.Constraint(con_set)
+
+    for branch_name in con_set:
+        if s_thermal_limits[branch_name] is None:
+            continue
+
+        m_ac.ineq_sf_branch_thermal_limit[branch_name] = \
+            m_ac.pf[branch_name] ** 2 + m_ac.qf[branch_name] ** 2 \
+            <= s_thermal_limits[branch_name] ** 2 + m_ac.sf_branch_slack_pos[branch_name]
+        m_ac.ineq_st_branch_thermal_limit[branch_name] = \
+            m_ac.pt[branch_name] ** 2 + m_ac.qt[branch_name] ** 2 \
+            <= s_thermal_limits[branch_name] ** 2 + m_ac.st_branch_slack_pos[branch_name]
+
+    # calculate infeasibilities
+    kcl_infeas_expr = sum(m_ac.p_slack_pos[bus_name] + m_ac.p_slack_neg[bus_name]
+                          + m_ac.q_slack_pos[bus_name] + m_ac.q_slack_neg[bus_name]
+                          for bus_name in bus_attrs['names'])
+    thermal_infeas_expr = sum(m_ac.sf_branch_slack_pos[branch_name]
+                              + m_ac.st_branch_slack_pos[branch_name]
+                              for branch_name in branch_attrs['names'])
+    sum_infeas_expr = kcl_infeas_expr + thermal_infeas_expr
+
+    decl.declare_var('kcl_infeas', model=m_ac, index_set=None,
+                     initialize=0, bounds=(0,sum(s_thermal_limits[k] for k in branches.keys()))
+                     )
+    decl.declare_var('thermal_infeas', model=m_ac, index_set=None,
+                     initialize=0, bounds=(0,sum(s_thermal_limits[k] for k in branches.keys()))
+                     )
+    m_ac.eq_kcl_infeas = pe.Constraint(expr=m_ac.kcl_infeas == kcl_infeas_expr)
+    m_ac.eq_thermal_infeas = pe.Constraint(expr=m_ac.thermal_infeas == thermal_infeas_expr)
+
     # set objective to sum of infeasibilities (i.e. slacks)
     m_ac.del_component(m_ac.obj)
-    penalty_expr = sum(m_ac.p_slack_pos[bus_name] + m_ac.p_slack_neg[bus_name]
-                       + m_ac.q_slack_pos[bus_name] + m_ac.q_slack_neg[bus_name]
-                       for bus_name in bus_attrs['names'])
-    m_ac.obj = pe.Objective(expr=penalty_expr)
+    m_ac.obj = pe.Objective(expr=sum_infeas_expr)
 
     # solve model
-    print('{}'.format(md.data['system']['mult']))
+    print('mult={}'.format(md.data['system']['mult']))
+    #m_ac.va.pprint()
     m_ac, results = _solve_model(m_ac, "ipopt", timelimit=None, solver_tee=False)
 
     sum_infeas = value(m_ac.obj)
@@ -456,14 +532,21 @@ def generate_sensitivity_plot(test_case, test_model_dict, data_generator=total_c
 
             # calculate norm from df_diff columns
             data = {}
+            data_is_vector = False
+            data_is_pct = False
+            data_is_nominal = False
+            avg_ac_data = sum(df_acopf[col].values for col in df_diff) / len(df_acopf)
             for col in df_diff:
                 colObj = df_diff[col]
                 if len(colObj.values) > 1:
                     data_is_vector = True
                     data[col] = np.linalg.norm(colObj.values, vector_norm)
-                else:
-                    data_is_vector = False
+                elif avg_ac_data > 1.0:
+                    data_is_pct = True
                     data[col] = (colObj.values / df_acopf[col].values) * 100
+                else:
+                    data_is_nominal = True
+                    data[col] = df_approx[col].values
 
             # record data in DataFrame
             df_col = pd.DataFrame(data, index=[test_model])
@@ -478,16 +561,19 @@ def generate_sensitivity_plot(test_case, test_model_dict, data_generator=total_c
     # show data in graph
     output = df_data.plot.line()
     output.set_title(y_axis_data)
-    output.set_ylim(top=0)
+    #output.set_ylim(top=0)
     output.set_xlabel("Demand Multiplier")
 
     if data_is_vector:
         filename = "sensitivityplot_" + case_name + "_" + y_axis_data + "_L{}_norm.png".format(vector_norm)
         output.set_ylabel('L-{} norm'.format(vector_norm))
-    else:
+    elif data_is_pct:
         filename = "sensitivityplot_" + case_name + "_" + y_axis_data + "_pctDiff.png"
         output.set_ylabel('Relative difference (%)')
         output.yaxis.set_major_formatter(mtick.PercentFormatter())
+    elif data_is_nominal:
+        filename = "sensitivityplot_" + case_name + "_" + y_axis_data + "_nominal.png"
+        output.set_ylabel('Nominal value (p.u.)')
 
     #save to destination folder
     destination = os.path.join(case_location, 'plots')
@@ -518,7 +604,7 @@ if __name__ == '__main__':
          'btheta' :           True
          }
 
-    solve_approximation_models(test_case, test_model_dict, init_min=0.9, init_max=1.1, steps=20)
+    #solve_approximation_models(test_case, test_model_dict, init_min=0.9, init_max=1.1, steps=10)
     generate_sensitivity_plot(test_case, test_model_dict, data_generator=sum_infeas, show_plot=True)
     #generate_sensitivity_plot(test_case, test_model_dict, data_generator=sum_infeas)
     #generate_sensitivity_plot(test_case, test_model_dict, data_generator=total_cost)

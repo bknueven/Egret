@@ -330,6 +330,11 @@ def _load_solution_to_model_data(m, md, results):
     branches = dict(md.elements(element_type='branch'))
     system = dict(md.data['system'])
 
+    bus_attrs = md.attributes(element_type='bus')
+    mapping_bus_to_idx = {bus_n: i for i, bus_n in enumerate(bus_attrs['names'])}
+
+    theta = tx_calc.linsolve_theta_fdf(m, md)
+
     md.data['system']['total_cost'] = value(m.obj)
     md.data['system']['ploss'] = value(m.ploss)
     md.data['system']['qloss'] = value(m.qloss)
@@ -344,6 +349,9 @@ def _load_solution_to_model_data(m, md, results):
         b_dict['pl'] = value(m.pl[b])
         b_dict['ql'] = value(m.ql[b])
         b_dict['vm'] = value(m.vm[b])
+
+        idx = mapping_bus_to_idx[b]
+        b_dict['va'] = theta[idx]
 
         # LMP energy components
         b_dict['lmp'] = value(m.dual[m.eq_p_balance])
