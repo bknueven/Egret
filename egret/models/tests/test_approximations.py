@@ -362,7 +362,7 @@ def sum_infeas(md):
     shunt_attrs = md.attributes(element_type='shunt')
 
     ### declare (and fix) the loads at the buses
-    #bus_p_loads, bus_q_loads = tx_utils.dict_of_bus_loads(buses, loads)
+    bus_p_loads, bus_q_loads = tx_utils.dict_of_bus_loads(buses, loads)
 
     # fix variables to the values in modeData object md
     for g, pg in m_ac.pg.items():
@@ -427,6 +427,14 @@ def sum_infeas(md):
             <= s_thermal_limits[branch_name] ** 2 + m_ac.st_branch_slack_pos[branch_name]
 
     # calculate infeasibilities
+    decl.declare_var('kcl_infeas', model=m_ac, index_set=None,
+                     initialize=0, bounds=(0, inf)
+                     #initialize=0, bounds=(0,2 * sum(bus_p_loads.values()) + abs(sum(bus_q_loads.values())))
+                     )
+    decl.declare_var('thermal_infeas', model=m_ac, index_set=None,
+                     #initialize=0, bounds=(0,inf)
+                     initialize=0, bounds=(0,sum(s_thermal_limits[k] for k in branches.keys()))
+                     )
     kcl_infeas_expr = sum(m_ac.p_slack_pos[bus_name] + m_ac.p_slack_neg[bus_name]
                           + m_ac.q_slack_pos[bus_name] + m_ac.q_slack_neg[bus_name]
                           for bus_name in bus_attrs['names'])
@@ -435,12 +443,6 @@ def sum_infeas(md):
                               for branch_name in branch_attrs['names'])
     sum_infeas_expr = kcl_infeas_expr + thermal_infeas_expr
 
-    decl.declare_var('kcl_infeas', model=m_ac, index_set=None,
-                     initialize=0, bounds=(0,sum(s_thermal_limits[k] for k in branches.keys()))
-                     )
-    decl.declare_var('thermal_infeas', model=m_ac, index_set=None,
-                     initialize=0, bounds=(0,sum(s_thermal_limits[k] for k in branches.keys()))
-                     )
     m_ac.eq_kcl_infeas = pe.Constraint(expr=m_ac.kcl_infeas == kcl_infeas_expr)
     m_ac.eq_thermal_infeas = pe.Constraint(expr=m_ac.thermal_infeas == thermal_infeas_expr)
 
@@ -450,7 +452,6 @@ def sum_infeas(md):
 
     # solve model
     print('mult={}'.format(md.data['system']['mult']))
-    #m_ac.va.pprint()
     m_ac, results = _solve_model(m_ac, "ipopt", timelimit=None, solver_tee=False)
 
     sum_infeas = value(m_ac.obj)
@@ -488,7 +489,7 @@ def read_sensitivity_data(case_folder, test_model, data_generator=total_cost):
             break
 
     if not data_is_vector:
-        df_data = pd.DataFrame(data, index=[0])
+        df_data = pd.DataFrame(data, index=[test_model])
         return df_data
 
 
@@ -521,6 +522,17 @@ def generate_sensitivity_plot(test_case, test_model_dict, data_generator=total_c
     # acopf comparison
     df_acopf = read_sensitivity_data(case_location, 'acopf', data_generator=data_generator)
 
+    data_is_vector = False
+    data_is_pct = False
+    data_is_nominal = False
+
+    if len(df_acopf.values) > 1:
+        data_is_vector = True
+    elif sum(df_acopf[idx].values for idx in df_acopf) / len(df_acopf) > 1.0:
+        data_is_pct = True
+    else:
+        data_is_nominal = True
+
     # empty dataframe to add data into
     df_data = pd.DataFrame(data=None)
 
@@ -532,25 +544,24 @@ def generate_sensitivity_plot(test_case, test_model_dict, data_generator=total_c
 
             # calculate norm from df_diff columns
             data = {}
-            data_is_vector = False
-            data_is_pct = False
-            data_is_nominal = False
-            avg_ac_data = sum(df_acopf[col].values for col in df_diff) / len(df_acopf)
+            avg_ac_data = sum(df_acopf[idx].values for idx in df_acopf) / len(df_acopf)
             for col in df_diff:
                 colObj = df_diff[col]
-                if len(colObj.values) > 1:
-                    data_is_vector = True
+                if data_is_vector is True:
                     data[col] = np.linalg.norm(colObj.values, vector_norm)
-                elif avg_ac_data > 1.0:
-                    data_is_pct = True
+                elif data_is_pct is True:
                     data[col] = (colObj.values / df_acopf[col].values) * 100
                 else:
-                    data_is_nominal = True
                     data[col] = df_approx[col].values
 
-            # record data in DataFrame
+            # record test_model column in DataFrame
             df_col = pd.DataFrame(data, index=[test_model])
             df_data = pd.concat([df_data, df_col])
+
+    # include acopf column for nominal data
+    if data_is_nominal:
+        df_data = pd.concat([df_data, df_acopf])
+        print(df_acopf)
 
     # show data in table
     y_axis_data = data_generator.__name__
@@ -590,7 +601,7 @@ def generate_sensitivity_plot(test_case, test_model_dict, data_generator=total_c
 
 if __name__ == '__main__':
 
-    test_case = test_cases[5]
+    test_case = test_cases[1]
     print(test_case)
 
     test_model_dict = \
@@ -604,7 +615,7 @@ if __name__ == '__main__':
          'btheta' :           True
          }
 
-    #solve_approximation_models(test_case, test_model_dict, init_min=0.9, init_max=1.1, steps=10)
+    #solve_approximation_models(test_case, test_model_dict, init_min=0.9, init_max=1.1, steps=20)
     generate_sensitivity_plot(test_case, test_model_dict, data_generator=sum_infeas, show_plot=True)
     #generate_sensitivity_plot(test_case, test_model_dict, data_generator=sum_infeas)
     #generate_sensitivity_plot(test_case, test_model_dict, data_generator=total_cost)
