@@ -218,7 +218,7 @@ def record_results(idx, mult, md):
     md.data['system']['mult'] = mult
 
     md.write_to_json(filename)
-    print(filename)
+    print('...out: {}'.format(filename))
 
 def create_testcase_directory(test_case):
 
@@ -332,134 +332,267 @@ def create_sum_infeas_model(model_data, acopf_model_generator=create_psv_acopf_m
     m.pf.setub(None)
 
 
-
-
-def sum_infeas(md):
-    '''
-    Seturns sum of power balance slack variables (i.e., infeasibilites)
-    Note: returned value is in p.u.
-    '''
+def solve_infeas_model(model_data):
 
     from egret.common.solver_interface import _solve_model
-    from pyomo.environ import value
 
     # build ACOPF model with fixed gen output, fixed voltage angle/mag, and relaxed power balance
-    #m_ac, md_ac = create_sum_infeas_model(md, acopf_model_generator=create_psv_acopf_model)
-    m_ac, md_ac = create_psv_acopf_model(md, include_feasibility_slack=True)
+    m, md = create_psv_acopf_model(model_data, include_feasibility_slack=True)
 
-    tx_utils.scale_ModelData_to_pu(md, inplace=True)
+    tx_utils.scale_ModelData_to_pu(model_data, inplace=True)
 
-    gens = dict(md.elements(element_type='generator'))
-    buses = dict(md.elements(element_type='bus'))
-    branches = dict(md.elements(element_type='branch'))
-    loads = dict(md.elements(element_type='load'))
-    shunts = dict(md.elements(element_type='shunt'))
+    gens = dict(model_data.elements(element_type='generator'))
+    buses = dict(model_data.elements(element_type='bus'))
+    branches = dict(model_data.elements(element_type='branch'))
+    loads = dict(model_data.elements(element_type='load'))
+    shunts = dict(model_data.elements(element_type='shunt'))
 
-    gen_attrs = md.attributes(element_type='generator')
-    bus_attrs = md.attributes(element_type='bus')
-    branch_attrs = md.attributes(element_type='branch')
-    load_attrs = md.attributes(element_type='load')
-    shunt_attrs = md.attributes(element_type='shunt')
+    gen_attrs = model_data.attributes(element_type='generator')
+    bus_attrs = model_data.attributes(element_type='bus')
+    branch_attrs = model_data.attributes(element_type='branch')
+    load_attrs = model_data.attributes(element_type='load')
+    shunt_attrs = model_data.attributes(element_type='shunt')
 
     ### declare (and fix) the loads at the buses
     bus_p_loads, bus_q_loads = tx_utils.dict_of_bus_loads(buses, loads)
 
     # fix variables to the values in modeData object md
-    for g, pg in m_ac.pg.items():
+    for g, pg in m.pg.items():
         pg.value = gens[g]['pg']
-    for g, qg in m_ac.qg.items():
+    for g, qg in m.qg.items():
         qg.value = gens[g]['qg']
-    for b, va in m_ac.va.items():
+    for b, va in m.va.items():
         va.value = buses[b]['va']
-    for b, vm in m_ac.vm.items():
+    for b, vm in m.vm.items():
         vm.value = buses[b]['vm']
 
-    m_ac.pg.fix()
-    m_ac.qg.fix()
-    m_ac.va.fix()
-    m_ac.vm.fix()
+    m.pg.fix()
+    m.qg.fix()
+    m.va.fix()
+    m.vm.fix()
 
     # remove power flow variable bounds
-    for b, pf in m_ac.pf.items():
+    for b, pf in m.pf.items():
         pf.setlb(None)
         pf.setub(None)
-    for b, pt in m_ac.pt.items():
+    for b, pt in m.pt.items():
         pt.setlb(None)
         pt.setub(None)
-    for b, qf in m_ac.qf.items():
+    for b, qf in m.qf.items():
         qf.setlb(None)
         qf.setub(None)
-    for b, qt in m_ac.qt.items():
+    for b, qt in m.qt.items():
         qt.setlb(None)
         qt.setub(None)
 
     # add slack variable to thermal limit constraints
-    m_ac.del_component(m_ac.ineq_sf_branch_thermal_limit)
-    m_ac.del_component(m_ac.ineq_st_branch_thermal_limit)
+    m.del_component(m.ineq_sf_branch_thermal_limit)
+    m.del_component(m.ineq_st_branch_thermal_limit)
     s_thermal_limits = {k: branches[k]['rating_long_term'] for k in branches.keys()}
     slack_init = {k: 0 for k in branch_attrs['names']}
     slack_bounds = {k: (0, s_thermal_limits[k]) for k in branches.keys()}
 
-    decl.declare_var('sf_branch_slack_pos', model=m_ac, index_set=branch_attrs['names'],
+    decl.declare_var('sf_branch_slack_pos', model=m, index_set=branch_attrs['names'],
                      initialize=slack_init, bounds=slack_bounds
                      )
-    decl.declare_var('st_branch_slack_pos', model=m_ac, index_set=branch_attrs['names'],
+    decl.declare_var('st_branch_slack_pos', model=m, index_set=branch_attrs['names'],
                      initialize=slack_init, bounds=slack_bounds
                      )
 
     try:
-        con_set = m_ac._con_ineq_s_branch_thermal_limit
+        con_set = m._con_ineq_s_branch_thermal_limit
     except:
-        con_set = decl.declare_set('_con_ineq_s_branch_thermal_limit', model=m_ac, index_set=branch_attrs['names'])
+        con_set = decl.declare_set('_con_ineq_s_branch_thermal_limit', model=m, index_set=branch_attrs['names'])
 
-    m_ac.ineq_sf_branch_thermal_limit = pe.Constraint(con_set)
-    m_ac.ineq_st_branch_thermal_limit = pe.Constraint(con_set)
+    m.ineq_sf_branch_thermal_limit = pe.Constraint(con_set)
+    m.ineq_st_branch_thermal_limit = pe.Constraint(con_set)
 
     for branch_name in con_set:
         if s_thermal_limits[branch_name] is None:
             continue
 
-        m_ac.ineq_sf_branch_thermal_limit[branch_name] = \
-            m_ac.pf[branch_name] ** 2 + m_ac.qf[branch_name] ** 2 \
-            <= s_thermal_limits[branch_name] ** 2 + m_ac.sf_branch_slack_pos[branch_name]
-        m_ac.ineq_st_branch_thermal_limit[branch_name] = \
-            m_ac.pt[branch_name] ** 2 + m_ac.qt[branch_name] ** 2 \
-            <= s_thermal_limits[branch_name] ** 2 + m_ac.st_branch_slack_pos[branch_name]
+        m.ineq_sf_branch_thermal_limit[branch_name] = \
+            m.pf[branch_name] ** 2 + m.qf[branch_name] ** 2 \
+            <= s_thermal_limits[branch_name] ** 2 + m.sf_branch_slack_pos[branch_name]
+        m.ineq_st_branch_thermal_limit[branch_name] = \
+            m.pt[branch_name] ** 2 + m.qt[branch_name] ** 2 \
+            <= s_thermal_limits[branch_name] ** 2 + m.st_branch_slack_pos[branch_name]
 
     # calculate infeasibilities
-    decl.declare_var('kcl_infeas', model=m_ac, index_set=None,
-                     initialize=0, bounds=(0, inf)
-                     #initialize=0, bounds=(0,2 * sum(bus_p_loads.values()) + abs(sum(bus_q_loads.values())))
-                     )
-    decl.declare_var('thermal_infeas', model=m_ac, index_set=None,
-                     #initialize=0, bounds=(0,inf)
-                     initialize=0, bounds=(0,sum(s_thermal_limits[k] for k in branches.keys()))
-                     )
-    kcl_infeas_expr = sum(m_ac.p_slack_pos[bus_name] + m_ac.p_slack_neg[bus_name]
-                          + m_ac.q_slack_pos[bus_name] + m_ac.q_slack_neg[bus_name]
-                          for bus_name in bus_attrs['names'])
-    thermal_infeas_expr = sum(m_ac.sf_branch_slack_pos[branch_name]
-                              + m_ac.st_branch_slack_pos[branch_name]
-                              for branch_name in branch_attrs['names'])
-    sum_infeas_expr = kcl_infeas_expr + thermal_infeas_expr
+    #decl.declare_var('kcl_p_infeas', model=m, index_set=None, initialize=0, bounds=(0, inf))
+    #decl.declare_var('kcl_q_infeas', model=m, index_set=None, initialize=0, bounds=(0, inf))
+    #decl.declare_var('thermal_infeas', model=m, index_set=None,
+    #                 initialize=0, bounds=(0,sum(s_thermal_limits[k] for k in branches.keys()))
+    #                 )
+    kcl_p_infeas_expr = sum(m.p_slack_pos[bus_name] + m.p_slack_neg[bus_name] for bus_name in bus_attrs['names'])
+    kcl_q_infeas_expr = sum(m.q_slack_pos[bus_name] + m.q_slack_neg[bus_name] for bus_name in bus_attrs['names'])
 
-    m_ac.eq_kcl_infeas = pe.Constraint(expr=m_ac.kcl_infeas == kcl_infeas_expr)
-    m_ac.eq_thermal_infeas = pe.Constraint(expr=m_ac.thermal_infeas == thermal_infeas_expr)
+    thermal_infeas_expr = sum(m.sf_branch_slack_pos[branch_name]
+                              + m.st_branch_slack_pos[branch_name]
+                              for branch_name in branch_attrs['names'])
+
+    sum_infeas_expr = kcl_p_infeas_expr + kcl_q_infeas_expr + thermal_infeas_expr
+
+    #m.eq_kcl_p_infeas = pe.Constraint(expr=m.kcl_p_infeas == kcl_p_infeas_expr)
+    #m.eq_kcl_q_infeas = pe.Constraint(expr=m.kcl_q_infeas == kcl_q_infeas_expr)
+    #m.eq_thermal_infeas = pe.Constraint(expr=m.thermal_infeas == thermal_infeas_expr)
 
     # set objective to sum of infeasibilities (i.e. slacks)
-    m_ac.del_component(m_ac.obj)
-    m_ac.obj = pe.Objective(expr=sum_infeas_expr)
+    m.del_component(m.obj)
+    m.obj = pe.Objective(expr=sum_infeas_expr)
 
     # solve model
     print('mult={}'.format(md.data['system']['mult']))
-    m_ac, results = _solve_model(m_ac, "ipopt", timelimit=None, solver_tee=False)
+    try:
+        m, results = _solve_model(m, "ipopt", timelimit=None, solver_tee=False)
+    except:
+        print('Solve failed... Increasing slack variable upper bounds.')
+        for b, p_slack_pos in m.p_slack_pos.items():
+            p_slack_pos.setub(9999)
+        for b, q_slack_pos in m.q_slack_pos.items():
+            q_slack_pos.setub(9999)
+        for b, sf_branch_slack_pos in m.sf_branch_slack_pos.items():
+            sf_branch_slack_pos.setub(9999)
+        for b, st_branch_slack_pos in m.st_branch_slack_pos.items():
+            st_branch_slack_pos.setub(9999)
+
+        m, results = _solve_model(m, "ipopt", timelimit=None, solver_tee=False)
+
+    show_me = results.Solver.status.key.__str__()
+    print('solver status: {}'.format(show_me))
+
+    tx_utils.unscale_ModelData_to_pu(md, inplace=True)
+
+    return m
+
+def kcl_p_infeas(md):
+    '''
+    Returns sum of real power balance infeasibilites (i.e., slack variables)
+    Note: returned value is in p.u.
+    '''
+    from pyomo.environ import value
+
+    bus_attrs = md.attributes(element_type='bus')
+
+    m_ac = solve_infeas_model(md)
+
+    kcl_p_list = [value(m_ac.p_slack_pos[bus_name]) + value(m_ac.p_slack_neg[bus_name])
+                  for bus_name in bus_attrs['names']]
+
+    kcl_p_infeas = sum(kcl_p_list)
+    #kcl_p_infeas = value(m_ac.kcl_p_infeas)
+
+    return kcl_p_infeas
+
+def kcl_q_infeas(md):
+    '''
+    Returns sum of reactive power balance infeasibilities (i.e., slack variables)
+    Note: returned value is in p.u.
+    '''
+    from pyomo.environ import value
+
+    bus_attrs = md.attributes(element_type='bus')
+
+    m_ac = solve_infeas_model(md)
+
+    kcl_q_list = [value(m_ac.q_slack_pos[bus_name]) + value(m_ac.q_slack_neg[bus_name])
+                  for bus_name in bus_attrs['names']]
+
+    kcl_q_infeas = sum(kcl_q_list)
+    #kcl_q_infeas = value(m_ac.kcl_q_infeas)
+
+    return kcl_q_infeas
+
+
+def thermal_infeas(md):
+    '''
+    Returns sum of thermal limit infeasibilities (i.e., slack variables)
+    Note: returned value is in p.u.
+    '''
+    from pyomo.environ import value
+
+    branch_attrs = md.attributes(element_type='branch')
+
+    m_ac = solve_infeas_model(md)
+
+    thermal_list = [value(m_ac.sf_branch_slack_pos[branch_name]) + value(m_ac.st_branch_slack_pos[branch_name])
+                    for branch_name in branch_attrs['names']]
+
+    thermal_infeas = sum(thermal_list)
+
+    return thermal_infeas
+
+
+def max_kcl_p_infeas(md):
+    '''
+    Returns the largest real power balance violation (i.e., slack variable)
+    Note: returned value is in p.u.
+    '''
+    from pyomo.environ import value
+
+    bus_attrs = md.attributes(element_type='bus')
+
+    m_ac = solve_infeas_model(md)
+
+    kcl_p_list = [value(m_ac.p_slack_pos[bus_name]) + value(m_ac.p_slack_neg[bus_name])
+                  for bus_name in bus_attrs['names']]
+
+    max_kcl_p_infeas = max(kcl_p_list)
+
+    return max_kcl_p_infeas
+
+
+def max_kcl_q_infeas(md):
+    '''
+    Returns the largest reactive power balance violation (i.e., slack variable)
+    Note: returned value is in p.u.
+    '''
+    from pyomo.environ import value
+
+    bus_attrs = md.attributes(element_type='bus')
+
+    m_ac = solve_infeas_model(md)
+
+    kcl_q_list = [value(m_ac.q_slack_pos[bus_name]) + value(m_ac.q_slack_neg[bus_name])
+                  for bus_name in bus_attrs['names']]
+
+    max_kcl_q_infeas = max(kcl_q_list)
+
+    return max_kcl_q_infeas
+
+
+def max_thermal_infeas(md):
+    '''
+    Returns slargest thermal limit violation (i.e., slack variable)
+    Note: returned value is in p.u.
+    '''
+    from pyomo.environ import value
+
+    branch_attrs = md.attributes(element_type='branch')
+
+    m_ac = solve_infeas_model(md)
+
+    thermal_list = [value(m_ac.sf_branch_slack_pos[branch_name]) + value(m_ac.st_branch_slack_pos[branch_name])
+                    for branch_name in branch_attrs['names']]
+
+    max_thermal_infeas = max(thermal_list)
+
+    return max_thermal_infeas
+
+def sum_infeas(md):
+    '''
+    Returns sum of all infeasibilites (i.e., power balance and thermal limit slacks)
+    Note: returned value is in p.u.
+    '''
+    from pyomo.environ import value
+
+    m_ac = solve_infeas_model(md)
 
     sum_infeas = value(m_ac.obj)
 
-    show_me = results.solver.termination_condition.__str__()
-    print('...{}...infeas = {}'.format(show_me, sum_infeas))
-
     tx_utils.unscale_ModelData_to_pu(md, inplace=True)
+
+    #print('infeas={}'.format(sum_infeas))
 
     return sum_infeas
 
@@ -478,6 +611,10 @@ def read_sensitivity_data(case_folder, test_model, data_generator=total_cost):
         md = ModelData(md_dict)
         mult = md.data['system']['mult']
         data[mult] = data_generator(md)
+
+    #data_is_vector = False
+    #print(file_list)
+    #print('data: {}'.format(pd.DataFrame(data, index=[test_model])))
 
     for d in data:
 
@@ -561,7 +698,6 @@ def generate_sensitivity_plot(test_case, test_model_dict, data_generator=total_c
     # include acopf column for nominal data
     if data_is_nominal:
         df_data = pd.concat([df_data, df_acopf])
-        print(df_acopf)
 
     # show data in table
     y_axis_data = data_generator.__name__
@@ -571,7 +707,7 @@ def generate_sensitivity_plot(test_case, test_model_dict, data_generator=total_c
 
     # show data in graph
     output = df_data.plot.line()
-    output.set_title(y_axis_data)
+    output.set_title(y_axis_data + " (" + case_name + ")")
     #output.set_ylim(top=0)
     output.set_xlabel("Demand Multiplier")
 
@@ -601,23 +737,29 @@ def generate_sensitivity_plot(test_case, test_model_dict, data_generator=total_c
 
 if __name__ == '__main__':
 
-    test_case = test_cases[1]
+    test_case = test_cases[0]
     print(test_case)
 
     test_model_dict = \
         {'ccm' :              False,
-         'lccm' :             False,
+         'lccm' :             True,
          'fdf' :              True,
-         'simplified_fdf' :   False,
+         'fdf_simplified' :   True,
          'ptdf_losses' :      False,
          'ptdf' :             False,
-         'btheta_losses' :    False,
+         'btheta_losses' :    True,
          'btheta' :           True
          }
 
     #solve_approximation_models(test_case, test_model_dict, init_min=0.9, init_max=1.1, steps=20)
     generate_sensitivity_plot(test_case, test_model_dict, data_generator=sum_infeas, show_plot=True)
     #generate_sensitivity_plot(test_case, test_model_dict, data_generator=sum_infeas)
+    #generate_sensitivity_plot(test_case, test_model_dict, data_generator=kcl_p_infeas)
+    #generate_sensitivity_plot(test_case, test_model_dict, data_generator=kcl_q_infeas)
+    #generate_sensitivity_plot(test_case, test_model_dict, data_generator=thermal_infeas)
+    #generate_sensitivity_plot(test_case, test_model_dict, data_generator=max_kcl_p_infeas)
+    #generate_sensitivity_plot(test_case, test_model_dict, data_generator=max_kcl_q_infeas)
+    #generate_sensitivity_plot(test_case, test_model_dict, data_generator=max_thermal_infeas)
     #generate_sensitivity_plot(test_case, test_model_dict, data_generator=total_cost)
     #generate_sensitivity_plot(test_case, test_model_dict, data_generator=ploss)
     #generate_sensitivity_plot(test_case, test_model_dict, data_generator=pgen, vector_norm=2)
