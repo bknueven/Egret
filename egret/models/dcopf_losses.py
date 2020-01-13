@@ -367,6 +367,14 @@ def solve_dcopf_losses(model_data,
     m, results, solver = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
                               symbolic_solver_labels=symbolic_solver_labels,options=options, return_solver=True)
 
+    if not hasattr(md,'results'):
+        md.data['results'] = dict()
+    md.data['results']['time'] = results.Solver.Time
+    md.data['results']['#_cons'] = results.Problem[0]['Number of constraints']
+    md.data['results']['#_vars'] = results.Problem[0]['Number of variables']
+    md.data['results']['#_nz'] = results.Problem[0]['Number of nonzeros']
+    md.data['results']['termination'] = results.solver.termination_condition.__str__()
+
     # save results data to ModelData object
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))
@@ -423,15 +431,27 @@ if __name__ == '__main__':
 
     path = os.path.dirname(__file__)
     print(path)
-    filename = 'pglib_opf_case30_ieee.m'
+    filename = 'pglib_opf_case3_lmbd.m'
+    #filename = 'pglib_opf_case5_pjm.m'
+    #filename = 'pglib_opf_case30_ieee.m'
     test_case = os.path.join(path, '../../download/pglib-opf-master/', filename)
     md_dict = create_ModelData(test_case)
     dcopf_losses_model = create_ptdf_losses_dcopf_model
 
     from egret.models.acopf import solve_acopf
 
-    md_dict, _, _ = solve_acopf(md_dict, "ipopt", solver_tee=False, return_model=True, return_results=True)
+    md_dict, _, _ = solve_acopf(md_dict, "ipopt", solver_tee=True, return_model=True, return_results=True)
 
     kwargs = {}
     md, results = solve_dcopf_losses(md_dict, "ipopt", dcopf_losses_model_generator=dcopf_losses_model,
                                      solver_tee=False, return_results=True, **kwargs)
+
+    print('---MD---')
+    print(md)
+    print('---Results---')
+    print('-Problem:')
+    print(results.Problem)
+    print('-Solver:')
+    print(results.Solver)
+    print('-Solution:')
+    print(results.Solution)

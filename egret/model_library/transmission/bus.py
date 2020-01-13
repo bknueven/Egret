@@ -15,6 +15,8 @@ import pyomo.environ as pe
 import egret.model_library.decl as decl
 from egret.model_library.defn import CoordinateType, ApproximationType
 from math import tan,  radians
+from pyomo.core.util import quicksum
+from pyomo.core.expr.numeric_expr import LinearExpression
 
 def declare_var_vr(model, index_set, **kwargs):
     """
@@ -73,9 +75,15 @@ def declare_var_ql(model, index_set, **kwargs):
 
 def declare_var_p_nw(model, index_set, **kwargs):
     """
-    Create variable for the reactive power load at a bus
+    Create variable for the real power net withdrawal at a bus
     """
     decl.declare_var('p_nw', model=model, index_set=index_set, **kwargs)
+
+def declare_var_q_nw(model, index_set, **kwargs):
+    """
+    Create variable for the reactive power net withdrawal at a bus
+    """
+    decl.declare_var('q_nw', model=model, index_set=index_set, **kwargs)
 
 
 def declare_expr_shunt_power_at_bus(model, index_set, shunt_attrs,
@@ -104,7 +112,7 @@ def declare_expr_shunt_power_at_bus(model, index_set, shunt_attrs,
 
 def declare_expr_p_net_withdraw_at_bus(model, index_set, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts ):
     """
-    Create a named pyomo expression for bus net withdraw
+    Create a named pyomo expression for real power bus net withdraw
     """
     m = model
     decl.declare_expr('p_nw', model, index_set)
@@ -116,7 +124,7 @@ def declare_expr_p_net_withdraw_at_bus(model, index_set, bus_p_loads, gens_by_bu
         
 def declare_eq_p_net_withdraw_at_bus(model, index_set, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts ):
     """
-    Create a named pyomo expression for bus net withdraw
+    Create a named pyomo expression for real power bus net withdraw
     """
     m = model
     con_set = decl.declare_set('_con_eq_p_net_withdraw_at_bus', model, index_set)
@@ -127,7 +135,73 @@ def declare_eq_p_net_withdraw_at_bus(model, index_set, bus_p_loads, gens_by_bus,
         m.eq_p_net_withdraw_at_bus[b] = m.p_nw[b] == ( bus_gs_fixed_shunts[b] 
                                                     + ( m.pl[b] if bus_p_loads[b] != 0.0 else 0.0 )
                                                     - sum( m.pg[g] for g in gens_by_bus[b] ) )
-                    
+
+
+def declare_expr_q_net_withdraw_at_bus(model, index_set, bus_q_loads, gens_by_bus, bus_bs_fixed_shunts):
+    """
+    Create a named pyomo expression for reactive power bus net withdraw
+    """
+    m = model
+    decl.declare_expr('q_nw', model, index_set)
+
+    for b in index_set:
+        m.q_nw[b] = (-bus_bs_fixed_shunts[b]
+                     + (m.ql[b] if bus_q_loads[b] != 0.0 else 0.0)
+                     - sum(m.qg[g] for g in gens_by_bus[b]))
+
+
+def declare_eq_q_net_withdraw_at_bus(model, index_set, bus_q_loads, gens_by_bus, bus_bs_fixed_shunts):
+    """
+    Create a named pyomo expression for reactive power bus net withdraw
+    """
+    m = model
+    con_set = decl.declare_set('_con_eq_q_net_withdraw_at_bus', model, index_set)
+
+    m.eq_q_net_withdraw_at_bus = pe.Constraint(con_set)
+
+    for b in index_set:
+        m.eq_q_net_withdraw_at_bus[b] = m.q_nw[b] == (-bus_bs_fixed_shunts[b]
+                                                      + (m.ql[b] if bus_q_loads[b] != 0.0 else 0.0)
+                                                      - sum(m.qg[g] for g in gens_by_bus[b]))
+
+def declare_eq_p_net_withdraw_fdf(model, index_set, buses, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts ):
+    """
+    Create a named pyomo expression for real power bus net withdraw
+    """
+    m = model
+    con_set = decl.declare_set('_con_eq_p_net_withdraw_at_bus', model, index_set)
+
+    m.eq_p_net_withdraw_at_bus = pe.Constraint(con_set)
+
+    for b in index_set:
+        bus = buses[b]
+        m.eq_p_net_withdraw_at_bus[b] = m.p_nw[b] == ( bus_gs_fixed_shunts[b] * ( 2 * bus['vm'] * m.vm[b] - bus['vm']**2)
+                                                    + ( m.pl[b] if bus_p_loads[b] != 0.0 else 0.0 )
+                                                    - sum( m.pg[g] for g in gens_by_bus[b] ) )
+
+        #if bus_gs_fixed_shunts[b] != 0:
+        #    print('Bus {} has shunt conductance {}'.format(b,bus_gs_fixed_shunts[b]))
+
+
+def declare_eq_q_net_withdraw_fdf(model, index_set, buses, bus_q_loads, gens_by_bus, bus_bs_fixed_shunts):
+    """
+    Create a named pyomo expression for reactive power bus net withdraw
+    """
+    m = model
+    con_set = decl.declare_set('_con_eq_q_net_withdraw_at_bus', model, index_set)
+
+    m.eq_q_net_withdraw_at_bus = pe.Constraint(con_set)
+
+    for b in index_set:
+        bus = buses[b]
+        m.eq_q_net_withdraw_at_bus[b] = m.q_nw[b] == (-bus_bs_fixed_shunts[b] * ( 2 * bus['vm'] * m.vm[b] - bus['vm']**2)
+                                                      + (m.ql[b] if bus_q_loads[b] != 0.0 else 0.0)
+                                                      - sum(m.qg[g] for g in gens_by_bus[b]))
+
+        #if bus_bs_fixed_shunts[b] != 0:
+        #    print('Bus {} has shunt susceptance {}'.format(b,bus_bs_fixed_shunts[b]))
+
+
 def declare_eq_ref_bus_nonzero(model, ref_angle, ref_bus):
     """
     Create an equality constraint to enforce tan(\theta) = vj/vr at  the reference bus
@@ -202,18 +276,20 @@ def declare_eq_p_balance_ed(model, index_set, bus_p_loads, gens_by_bus, bus_gs_f
 
 def declare_eq_p_balance_fdf(model, index_set, buses, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts, **rhs_kwargs):
     """
-    Create the equality constraints for the real power balance
-    at a bus using the variables for real power flows, respectively.
+    Create the equality constraints for the SYSTEM real power balance
 
     NOTE: Equation build orientates constants to the RHS in order to compute the correct dual variable sign
     """
     m = model
 
+    # generation
     p_expr = sum(m.pg[gen_name] for bus_name in index_set for gen_name in gens_by_bus[bus_name])
+    # load
     p_expr -= sum(m.pl[bus_name] for bus_name in index_set if bus_p_loads[bus_name] is not None)
-    # p_expr -= sum(bus_gs_fixed_shunts[bus_name] for bus_name in index_set if bus_gs_fixed_shunts[bus_name] != 0.0)
+    # shunts
     p_expr -= sum(bus_gs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2) for bus_name in index_set if bus_gs_fixed_shunts[bus_name] != 0.0)
 
+    # slacks and line losses
     if rhs_kwargs:
         for idx,val in rhs_kwargs.items():
             if idx == 'include_feasibility_slack_pos':
@@ -228,19 +304,20 @@ def declare_eq_p_balance_fdf(model, index_set, buses, bus_p_loads, gens_by_bus, 
 
 def declare_eq_q_balance_fdf(model, index_set, buses, bus_q_loads, gens_by_bus, bus_bs_fixed_shunts, **rhs_kwargs):
     """
-    Create the equality constraints for the reactive power balance
-    at a bus using the variables for real power flows, respectively.
+    Create the equality constraints for the SYSTEM reactive power balance
 
     NOTE: Equation build orientates constants to the RHS in order to compute the correct dual variable sign
     """
     m = model
 
+    # generation
     q_expr = sum(m.qg[gen_name] for bus_name in index_set for gen_name in gens_by_bus[bus_name])
+    # load
     q_expr -= sum(m.ql[bus_name] for bus_name in index_set if bus_q_loads[bus_name] is not None)
-    # q_expr += sum(bus_bs_fixed_shunts[bus_name] for bus_name in index_set if bus_bs_fixed_shunts[bus_name] != 0.0)
+    # shunts
     q_expr += sum(bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2) for bus_name in index_set if bus_bs_fixed_shunts[bus_name] != 0.0)
 
-
+    # slacks and line losses
     if rhs_kwargs:
         for idx,val in rhs_kwargs.items():
             if idx == 'include_feasibility_slack_pos':
@@ -249,6 +326,62 @@ def declare_eq_q_balance_fdf(model, index_set, buses, bus_q_loads, gens_by_bus, 
                 q_expr += eval("m." + val)
             if idx == 'include_losses':
                 q_expr -= sum(m.qfl[branch_name] for branch_name in val)
+
+    m.eq_q_balance = pe.Constraint(expr = q_expr == 0.0)
+
+
+def declare_eq_p_balance_fdf_simplified(model, index_set, buses, bus_p_loads, gens_by_bus, bus_gs_fixed_shunts, **rhs_kwargs):
+    """
+    Create the equality constraints for the SYSTEM real power balance
+
+    NOTE: Equation build orientates constants to the RHS in order to compute the correct dual variable sign
+    """
+    m = model
+
+    # generation
+    p_expr = sum(m.pg[gen_name] for bus_name in index_set for gen_name in gens_by_bus[bus_name])
+    # load
+    p_expr -= sum(m.pl[bus_name] for bus_name in index_set if bus_p_loads[bus_name] is not None)
+    # shunts
+    p_expr -= sum(bus_gs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2) for bus_name in index_set if bus_gs_fixed_shunts[bus_name] != 0.0)
+    # losses
+    p_expr -= m.ploss
+
+    # slacks
+    if rhs_kwargs:
+        for idx,val in rhs_kwargs.items():
+            if idx == 'include_feasibility_slack_pos':
+                p_expr -= eval("m." + val)
+            if idx == 'include_feasibility_slack_neg':
+                p_expr += eval("m." + val)
+
+    m.eq_p_balance = pe.Constraint(expr = p_expr == 0.0)
+
+
+def declare_eq_q_balance_fdf_simplified(model, index_set, buses, bus_q_loads, gens_by_bus, bus_bs_fixed_shunts, **rhs_kwargs):
+    """
+    Create the equality constraints for the SYSTEM reactive power balance
+
+    NOTE: Equation build orientates constants to the RHS in order to compute the correct dual variable sign
+    """
+    m = model
+
+    # generation
+    q_expr = sum(m.qg[gen_name] for bus_name in index_set for gen_name in gens_by_bus[bus_name])
+    # load
+    q_expr -= sum(m.ql[bus_name] for bus_name in index_set if bus_q_loads[bus_name] is not None)
+    # shunts
+    q_expr += sum(bus_bs_fixed_shunts[bus_name]*(2*buses[bus_name]["vm"]*m.vm[bus_name]-(buses[bus_name]["vm"])**2) for bus_name in index_set if bus_bs_fixed_shunts[bus_name] != 0.0)
+    # losses
+    q_expr -= m.qloss
+
+    # slacks and losses
+    if rhs_kwargs:
+        for idx,val in rhs_kwargs.items():
+            if idx == 'include_feasibility_slack_pos':
+                q_expr -= eval("m." + val)
+            if idx == 'include_feasibility_slack_neg':
+                q_expr += eval("m." + val)
 
     m.eq_q_balance = pe.Constraint(expr = q_expr == 0.0)
 
@@ -492,6 +625,70 @@ def declare_ineq_vm_bus_lbub(model, index_set, buses, coordinate_type=Coordinate
                 m.vr[bus_name]**2 + m.vj[bus_name]**2 <= buses[bus_name]['v_max']**2
 
 
+def get_vm_expr_vdf_approx(model, bus_name, vdf, vdf_c, rel_tol=None, abs_tol=None):
+    """
+    Create a pyomo power flow expression from VDF matrix (voltage magnitudes)
+    """
+
+    if rel_tol is None:
+        rel_tol = 0.
+    if abs_tol is None:
+        abs_tol = 0.
+
+    max_coef = 1
+    vdf_tol = max(abs_tol, rel_tol*max_coef)
+    ## NOTE: It would be easy to hold on to the 'ptdf' dictionary here,
+    ##       if we wanted to
+    m_q_nw = model.q_nw
+    ## if model.q_nw is Var, we can use LinearExpression
+    ## to build these dense constraints much faster
+    if isinstance(m_q_nw, pe.Var):
+        coef_list = list()
+        var_list = list()
+        #for bus_name, coef in PTDF.get_branch_ptdf_iterator(branch_name):
+        for bus_name, coef in vdf.items():
+            if abs(coef) >= vdf_tol:
+                coef_list.append(coef)
+                var_list.append(m_q_nw[bus_name])
+
+        lin_expr_list = [vdf_c] + coef_list + var_list
+        expr = LinearExpression(lin_expr_list)
+    else:
+        expr = quicksum( (coef*m_q_nw[bus_name] for bus_name, coef in vdf.items() if abs(coef) >= vdf_tol), start=vdf_c, linear=True)
+
+    return expr
+
+def declare_eq_vm_vdf_approx(model, index_set, sensitivity, constant, rel_tol=None, abs_tol=None):
+    """
+    Create the equality constraints or expressions for voltage magnitude
+    (from VDF approximation) in the bus
+    """
+
+    m = model
+
+    con_set = decl.declare_set("_con_eq_vm_vdf_approx_set", model, index_set)
+
+    vm_is_var = isinstance(m.vm, pe.Var)
+
+    if vm_is_var:
+        m.eq_vm_bus = pe.Constraint(con_set)
+    else:
+        if not isinstance(m.vm, pe.Expression):
+            raise Exception("Unrecognized type for m.vm", m.vm.pprint())
+
+    for bus_name in con_set:
+        vdf = sensitivity[bus_name]
+        vdf_c = constant[bus_name]
+        expr = \
+            get_vm_expr_vdf_approx(m, bus_name, vdf, vdf_c, rel_tol=rel_tol, abs_tol=abs_tol)
+
+        if vm_is_var:
+            m.eq_vm_bus[bus_name] = \
+                m.vm[bus_name] == expr
+        else:
+            m.vm[bus_name] = expr
+
+
 def declare_eq_vm_fdf(model, index_set, buses, bus_q_loads, gens_by_bus, bus_bs_fixed_shunts, vdf_tol = 1e-10, **rhs_kwargs):
     """
     Create the inequalities for the voltage magnitudes from the
@@ -605,6 +802,98 @@ def declare_eq_q_balance_ccm_approx(model, index_set,
 
         if bus_bs_fixed_shunts[bus_name] != 0.0:
             q_expr += bus_bs_fixed_shunts[bus_name]*(buses[bus_name]["vm"])**2
+
+        if bus_q_loads[bus_name] != 0.0: # only applies to fixed loads, otherwise may cause an error
+            q_expr -= m.ql[bus_name]
+
+        if rhs_kwargs:
+            for idx, val in rhs_kwargs.items():
+                if idx == 'include_feasibility_slack_pos':
+                    q_expr -= eval("m." + val)[bus_name]
+                if idx == 'include_feasibility_slack_neg':
+                    q_expr += eval("m." + val)[bus_name]
+
+        for gen_name in gens_by_bus[bus_name]:
+            q_expr += m.qg[gen_name]
+
+        m.eq_q_balance[bus_name] = \
+            q_expr == 0.0
+
+
+def declare_eq_p_balance_lccm_approx(model, index_set,
+                                   buses,
+                                   bus_p_loads,
+                                   gens_by_bus,
+                                   bus_gs_fixed_shunts,
+                                   inlet_branches_by_bus,
+                                   outlet_branches_by_bus,
+                                   **rhs_kwargs):
+    """
+    Create the equality constraints for the real power balance
+    at a bus using the variables for real power flows, respectively.
+
+    NOTE: Equation build orientates constants to the RHS in order to compute the correct dual variable sign
+    """
+    m = model
+    con_set = decl.declare_set('_con_eq_p_balance', model, index_set)
+
+    m.eq_p_balance = pe.Constraint(con_set)
+
+    for bus_name in con_set:
+        p_expr = -0.5*sum([m.pfl[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
+        p_expr -= 0.5*sum([m.pfl[branch_name] for branch_name in outlet_branches_by_bus[bus_name]])
+        p_expr -= sum([m.pf[branch_name] for branch_name in outlet_branches_by_bus[bus_name]])
+        p_expr += sum([m.pf[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
+
+        if bus_gs_fixed_shunts[bus_name] != 0.0:
+            bus=buses[bus_name]
+            p_expr -= bus_gs_fixed_shunts[bus_name] * ( 2 * bus['vm'] * m.vm[bus_name] - bus['vm']**2 )
+
+        if bus_p_loads[bus_name] != 0.0: # only applies to fixed loads, otherwise may cause an error
+            p_expr -= m.pl[bus_name]
+
+        if rhs_kwargs:
+            for idx, val in rhs_kwargs.items():
+                if idx == 'include_feasibility_slack_pos':
+                    p_expr -= eval("m." + val)[bus_name]
+                if idx == 'include_feasibility_slack_neg':
+                    p_expr += eval("m." + val)[bus_name]
+
+        for gen_name in gens_by_bus[bus_name]:
+            p_expr += m.pg[gen_name]
+
+        m.eq_p_balance[bus_name] = \
+            p_expr == 0.0
+
+
+def declare_eq_q_balance_lccm_approx(model, index_set,
+                                   buses,
+                                   bus_q_loads,
+                                   gens_by_bus,
+                                   bus_bs_fixed_shunts,
+                                   inlet_branches_by_bus,
+                                   outlet_branches_by_bus,
+                                   **rhs_kwargs):
+    """
+    Create the equality constraints for the real power balance
+    at a bus using the variables for real power flows, respectively.
+
+    NOTE: Equation build orientates constants to the RHS in order to compute the correct dual variable sign
+    """
+    m = model
+    con_set = decl.declare_set('_con_eq_q_balance', model, index_set)
+
+    m.eq_q_balance = pe.Constraint(con_set)
+
+    for bus_name in con_set:
+        q_expr = -0.5*sum([m.qfl[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
+        q_expr -= 0.5*sum([m.qfl[branch_name] for branch_name in outlet_branches_by_bus[bus_name]])
+        q_expr -= sum([m.qf[branch_name] for branch_name in outlet_branches_by_bus[bus_name]])
+        q_expr += sum([m.qf[branch_name] for branch_name in inlet_branches_by_bus[bus_name]])
+
+        if bus_bs_fixed_shunts[bus_name] != 0.0:
+            bus = buses[bus_name]
+            q_expr += bus_bs_fixed_shunts[bus_name] * ( 2 * bus['vm'] * m.vm[bus_name] - bus['vm']**2 )
 
         if bus_q_loads[bus_name] != 0.0: # only applies to fixed loads, otherwise may cause an error
             q_expr -= m.ql[bus_name]

@@ -418,12 +418,22 @@ def solve_dcopf(model_data,
         iter_limit = m._ptdf_options['iteration_limit']
         term_cond = _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit=timelimit, solver_tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels,iteration_limit=iter_limit)
 
+    if not hasattr(md,'results'):
+        md.data['results'] = dict()
+    md.data['results']['time'] = results.Solver.Time
+    md.data['results']['#_cons'] = results.Problem[0]['Number of constraints']
+    md.data['results']['#_vars'] = results.Problem[0]['Number of variables']
+    md.data['results']['#_nz'] = results.Problem[0]['Number of nonzeros']
+    md.data['results']['termination'] = results.solver.termination_condition.__str__()
+
     # save results data to ModelData object
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))
     branches = dict(md.elements(element_type='branch'))
 
     md.data['system']['total_cost'] = value(m.obj)
+    md.data['system']['ploss'] = 0
+    md.data['system']['qloss'] = 0
 
     for g,g_dict in gens.items():
         g_dict['pg'] = value(m.pg[g])
@@ -458,12 +468,14 @@ def solve_dcopf(model_data,
             b_dict = buses[b]
             b_dict['lmp'] = LMPE + LMPC[i]
             b_dict['pl'] = value(m.pl[b])
+            b_dict['vm'] = 1.0
     else:
         for b,b_dict in buses.items():
             b_dict['pl'] = value(m.pl[b])
             if dcopf_model_generator == create_btheta_dcopf_model:
                 b_dict['lmp'] = value(m.dual[m.eq_p_balance[b]])
                 b_dict['va'] = value(m.va[b])
+                b_dict['vm'] = 1.0
             else:
                 raise Exception("Unrecognized dcopf_mode_generator {}".format(dcopf_model_generator))
 

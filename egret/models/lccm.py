@@ -14,13 +14,16 @@ This module provides functions that create the modules for typical ACOPF formula
 """
 import pyomo.environ as pe
 from math import inf, pi
+import pandas as pd
 import egret.model_library.transmission.tx_utils as tx_utils
 import egret.model_library.transmission.tx_calc as tx_calc
 import egret.model_library.transmission.bus as libbus
 import egret.model_library.transmission.branch as libbranch
+import egret.model_library.transmission.branch_deprecated as libbranch_deprecated
 import egret.model_library.transmission.gen as libgen
 from egret.model_library.defn import ApproximationType, SensitivityCalculationMethod
 from egret.data.model_data import zip_items
+import egret.data.data_utils_deprecated as data_utils_deprecated
 import egret.model_library.decl as decl
 
 
@@ -70,29 +73,27 @@ def _include_v_feasibility_slack(model, bus_attrs, penalty=100):
     return v_rhs_kwargs, penalty_expr
 
 
-def create_fixed_ccm_model(model_data, solved_model, **kwargs):
-    ## creates a CCM model with fixed m.pg and m.qg, and relaxed power balance
+def create_fixed_lccm_model(model_data, **kwargs):
+    ## creates an FDF model with fixed m.pg and m.qg, and relaxed power balance
 
-    model, md = create_ccm_model(model_data, include_feasibility_slack=True, include_v_feasibility_slack=True, **kwargs)
+    model, md = create_lccm_model(model_data, include_feasibility_slack=True, include_v_feasibility_slack=True, **kwargs)
 
     for g, pg in model.pg.items():
-        pg.value = pe.value(solved_model.pg[g])
+        pg.value = value(m_ac.pg[g])
     for g, qg in model.qg.items():
-        qg.value = pe.value(solved_model.qg[g])
-    for b,vm in model.vm.items():
-        vm.value = pe.value(solved_model.vm[b])
+        qg.value = value(m_ac.qg[g])
 
     model.pg.fix()
     model.qg.fix()
-    model.vm.fix()
 
     return model, md
 
 
-def create_ccm_model(model_data, include_feasibility_slack=False, include_v_feasibility_slack=False, calculation_method=SensitivityCalculationMethod.INVERT):
-    ''' convex combination midpoint (ccm) model '''
+def create_lccm_model(model_data, include_feasibility_slack=False, include_v_feasibility_slack=False, calculation_method=SensitivityCalculationMethod.INVERT):
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
+
+    data_utils_deprecated.create_dicts_of_lccm(md)
 
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))
@@ -106,8 +107,7 @@ def create_ccm_model(model_data, include_feasibility_slack=False, include_v_feas
     load_attrs = md.attributes(element_type='load')
     shunt_attrs = md.attributes(element_type='shunt')
 
-    inlet_branches_by_bus, outlet_branches_by_bus = \
-        tx_utils.inlet_outlet_branches_by_bus(branches, buses)
+    inlet_branches_by_bus, outlet_branches_by_bus = tx_utils.inlet_outlet_branches_by_bus(branches, buses)
     gens_by_bus = tx_utils.gens_by_bus(buses, gens)
 
     model = pe.ConcreteModel()
@@ -127,22 +127,13 @@ def create_ccm_model(model_data, include_feasibility_slack=False, include_v_feas
     libbus.declare_var_vm(model, bus_attrs['names'], initialize=bus_attrs['vm'],
                           bounds=zip_items(bus_attrs['v_min'], bus_attrs['v_max'])
                           )
-
-    va_bounds = {k: (-pi, pi) for k in bus_attrs['va']}
-    libbus.declare_var_va(model, bus_attrs['names'], initialize=bus_attrs['va'],
-                          bounds=va_bounds
-                          )
-
-    dva_initialize = {k: 0.0 for k in branch_attrs['names']}
-    libbranch.declare_var_dva(model, branch_attrs['names'],
-                              initialize=dva_initialize
-                              )
+    libbus.declare_var_va(model, bus_attrs['names'], initialize=bus_attrs['va'])
 
     ### include the feasibility slack for the bus balances
     p_rhs_kwargs = {}
     q_rhs_kwargs = {}
     if include_feasibility_slack:
-        p_rhs_kwargs, q_rhs_kwargs, penalty_expr = _include_system_feasibility_slack(model,bus_attrs, gen_attrs, bus_p_loads, bus_q_loads)
+        p_rhs_kwargs, q_rhs_kwargs, penalty_expr = _include_system_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, bus_q_loads)
 
     v_rhs_kwargs = {}
     if include_v_feasibility_slack:
@@ -166,11 +157,11 @@ def create_ccm_model(model_data, include_feasibility_slack=False, include_v_feas
     decl.declare_var('q_neg', model=model, index_set=gen_attrs['names'], bounds=q_neg_bounds)
 
     ### declare the net withdrawal variables (for later use in defining constraints with efficient 'LinearExpression')
-    p_nw_init = {k: 0 for k in bus_attrs['names']}
-    libbus.declare_var_p_nw(model, bus_attrs['names'], initialize=p_nw_init)
+    p_net_withdrawal_init = {k: 0 for k in bus_attrs['names']}
+    libbus.declare_var_p_nw(model, bus_attrs['names'], initialize=p_net_withdrawal_init)
 
-    q_nw_init = {k: 0 for k in bus_attrs['names']}
-    libbus.declare_var_q_nw(model, bus_attrs['names'], initialize=q_nw_init)
+    q_net_withdrawal_init = {k: 0 for k in bus_attrs['names']}
+    libbus.declare_var_q_nw(model, bus_attrs['names'], initialize=q_net_withdrawal_init)
 
     ### declare the current flows in the branches
     vr_init = {k: bus_attrs['vm'][k] * pe.cos(bus_attrs['va'][k]) for k in bus_attrs['vm']}
@@ -202,6 +193,7 @@ def create_ccm_model(model_data, include_feasibility_slack=False, include_v_feas
                                          vj_init[to_bus], y_matrix)
         itj_init = tx_calc.calculate_itj(vr_init[from_bus], vj_init[from_bus], vr_init[to_bus],
                                          vj_init[to_bus], y_matrix)
+        #TODO: this calculation seems redundant since line flows should already be in the model
         pf_init[branch_name] = (tx_calc.calculate_p(ifr_init, ifj_init, vr_init[from_bus], vj_init[from_bus])\
                                 -tx_calc.calculate_p(itr_init, itj_init, vr_init[to_bus], vj_init[to_bus]))/2
         pfl_init[branch_name] = (tx_calc.calculate_p(ifr_init, ifj_init, vr_init[from_bus], vj_init[from_bus])\
@@ -227,50 +219,77 @@ def create_ccm_model(model_data, include_feasibility_slack=False, include_v_feas
 #                             bounds=qf_bounds
 #                             )
     libbranch.declare_var_qfl(model=model,
-                             index_set=branch_attrs['names'],
-                             initialize=qfl_init)#,
-#                             bounds=qfl_bounds
-#                             )
-
-    ### declare the midpoint power approximation constraints (real/reactive power flow and losses)
-    libbranch.declare_eq_branch_midpoint_power(model=model,
-                                               index_set=branch_attrs['names'],
-                                               branches=branches
-                                              )
+                              index_set=branch_attrs['names'],
+                              initialize=qfl_init)  # ,
+#                              bounds=qfl_bounds
+#                              )
 
     ### declare net withdrawal definition constraints
-    libbus.declare_eq_p_net_withdraw_at_bus(model,bus_attrs['names'],bus_p_loads,gens_by_bus,bus_gs_fixed_shunts)
-    libbus.declare_eq_q_net_withdraw_at_bus(model,bus_attrs['names'],bus_q_loads,gens_by_bus,bus_bs_fixed_shunts)
+    libbus.declare_eq_p_net_withdraw_fdf(model,bus_attrs['names'],buses,bus_p_loads,gens_by_bus,bus_gs_fixed_shunts)
+    libbus.declare_eq_q_net_withdraw_fdf(model,bus_attrs['names'],buses,bus_q_loads,gens_by_bus,bus_bs_fixed_shunts)
+
+    libbranch.declare_eq_branch_pf_lccm_approx(model=model,
+                                               index_set=branch_attrs['names'],
+                                               sensitivity=branch_attrs['Ft'],
+                                               constant=branch_attrs['ft_c'],
+                                               rel_tol=None,
+                                               abs_tol=None
+                                               )
+
+    libbranch.declare_eq_branch_qf_lccm_approx(model=model,
+                                               index_set=branch_attrs['names'],
+                                               sensitivity=branch_attrs['Fv'],
+                                               constant=branch_attrs['fv_c'],
+                                               rel_tol=None,
+                                               abs_tol=None
+                                               )
+
+    libbranch.declare_eq_branch_pfl_lccm_approx(model=model,
+                                                 index_set=branch_attrs['names'],
+                                                 sensitivity=branch_attrs['Lt'],
+                                                 constant=branch_attrs['lt_c'],
+                                                 rel_tol=None,
+                                                 abs_tol=None
+                                                 )
+
+    libbranch.declare_eq_branch_qfl_lccm_approx(model=model,
+                                                 index_set=branch_attrs['names'],
+                                                 sensitivity=branch_attrs['Lv'],
+                                                 constant=branch_attrs['lv_c'],
+                                                 rel_tol=None,
+                                                 abs_tol=None
+                                                 )
 
     ### declare the p balance
-    libbus.declare_eq_p_balance_ccm_approx(model=model,
-                                           index_set=bus_attrs['names'],
-                                           buses=buses,
-                                           bus_p_loads=bus_p_loads,
-                                           gens_by_bus=gens_by_bus,
-                                           bus_gs_fixed_shunts=bus_gs_fixed_shunts,
-                                           inlet_branches_by_bus=inlet_branches_by_bus,
-                                           outlet_branches_by_bus=outlet_branches_by_bus,
-                                           **p_rhs_kwargs
-                                           )
+    libbus.declare_eq_p_balance_lccm_approx(model=model,
+                                            index_set=bus_attrs['names'],
+                                            buses=buses,
+                                            bus_p_loads=bus_p_loads,
+                                            gens_by_bus=gens_by_bus,
+                                            bus_gs_fixed_shunts=bus_gs_fixed_shunts,
+                                            inlet_branches_by_bus=inlet_branches_by_bus,
+                                            outlet_branches_by_bus=outlet_branches_by_bus,
+                                            **p_rhs_kwargs
+                                            )
 
     ### declare the q balance
-    libbus.declare_eq_q_balance_ccm_approx(model=model,
-                                           index_set=bus_attrs['names'],
-                                           buses=buses,
-                                           bus_q_loads=bus_q_loads,
-                                           gens_by_bus=gens_by_bus,
-                                           bus_bs_fixed_shunts=bus_bs_fixed_shunts,
-                                           inlet_branches_by_bus=inlet_branches_by_bus,
-                                           outlet_branches_by_bus=outlet_branches_by_bus,
-                                           **q_rhs_kwargs
-                                           )
+    libbus.declare_eq_q_balance_lccm_approx(model=model,
+                                            index_set=bus_attrs['names'],
+                                            buses=buses,
+                                            bus_q_loads=bus_q_loads,
+                                            gens_by_bus=gens_by_bus,
+                                            bus_bs_fixed_shunts=bus_bs_fixed_shunts,
+                                            inlet_branches_by_bus=inlet_branches_by_bus,
+                                            outlet_branches_by_bus=outlet_branches_by_bus,
+                                            **q_rhs_kwargs
+                                    )
 
     ### declare the real power flow limits
     libbranch.declare_fdf_thermal_limit(model=model,
                                         index_set=branch_attrs['names'],
-                                        thermal_limits=s_max,
+                                        thermal_limits=s_max
                                         )
+
 
     libgen.declare_eq_q_fdf_deviation(model=model,
                                       index_set=gen_attrs['names'],
@@ -293,18 +312,53 @@ def create_ccm_model(model_data, include_feasibility_slack=False, include_v_feas
     return model, md
 
 
-def solve_ccm(model_data,
+def _load_solution_to_model_data(m, md, results):
+    from pyomo.environ import value
+    from egret.model_library.transmission.tx_utils import unscale_ModelData_to_pu
+
+    # save results data to ModelData object
+    gens = dict(md.elements(element_type='generator'))
+    buses = dict(md.elements(element_type='bus'))
+    branches = dict(md.elements(element_type='branch'))
+
+    md.data['system']['total_cost'] = value(m.obj)
+
+    for g,g_dict in gens.items():
+        g_dict['pg'] = value(m.pg[g])
+        g_dict['qg'] = value(m.qg[g])
+
+    for b,b_dict in buses.items():
+        b_dict['pl'] = value(m.pl[b])
+        b_dict['ql'] = value(m.ql[b])
+        b_dict['vm'] = value(m.vm[b])
+        b_dict['va'] = value(m.va[b])
+
+        b_dict['lmp'] = value(m.dual[m.eq_p_balance[b]])
+        b_dict['qlmp'] = value(m.dual[m.eq_q_balance[b]])
+
+    for k, k_dict in branches.items():
+        k_dict['pf'] = value(m.pf[k])
+        k_dict['qf'] = value(m.qf[k])
+        k_dict['pfl'] = value(m.pfl[k])
+        k_dict['qfl'] = value(m.qfl[k])
+
+    unscale_ModelData_to_pu(md, inplace=True)
+
+    return
+
+
+def solve_lccm(model_data,
                 solver,
                 timelimit = None,
                 solver_tee = True,
                 symbolic_solver_labels = False,
                 options = None,
-                ccm_model_generator = create_ccm_model,
+                lccm_model_generator = create_lccm_model,
                 return_model = False,
                 return_results = False,
                 **kwargs):
     '''
-    Create and solve a new "convex combination midpoint" model
+    Create and solve a new acopf model
 
     Parameters
     ----------
@@ -321,9 +375,9 @@ def solve_ccm(model_data,
         Use symbolic solver labels. Useful for debugging; default is False.
     options : dict (optional)
         Other options to pass into the solver. Default is dict().
-    ccm_model_generator : function (optional)
+    fdf_model_generator : function (optional)
         Function for generating the fdf model. Default is
-        egret.models.ccm.create_ccm_model
+        egret.models.acopf.create_fdf_model
     return_model : bool (optional)
         If True, returns the pyomo model object
     return_results : bool (optional)
@@ -335,7 +389,7 @@ def solve_ccm(model_data,
     import pyomo.environ as pe
     from egret.common.solver_interface import _solve_model
 
-    m, md = ccm_model_generator(model_data, **kwargs)
+    m, md = lccm_model_generator(model_data, **kwargs)
 
     # for debugging purposes
     #m.pg.fix()
@@ -368,49 +422,141 @@ def solve_ccm(model_data,
         return md, results
     return md
 
-
-def _load_solution_to_model_data(m, md,results):
-    from pyomo.environ import value
-    from egret.model_library.transmission.tx_utils import unscale_ModelData_to_pu
-
-    # save results data to ModelData object
-    gens = dict(md.elements(element_type='generator'))
-    buses = dict(md.elements(element_type='bus'))
-    branches = dict(md.elements(element_type='branch'))
-
-    md.data['system']['total_cost'] = value(m.obj)
-    md.data['system']['ploss'] = sum(value(m.pfl[b]) for b,b_dict in branches.items())
-    md.data['system']['qloss'] = sum(value(m.qfl[b]) for b,b_dict in branches.items())
-
-    for g,g_dict in gens.items():
-        g_dict['pg'] = value(m.pg[g])
-        g_dict['qg'] = value(m.qg[g])
-
-    for b,b_dict in buses.items():
-        b_dict['lmp'] = value(m.dual[m.eq_p_balance[b]])
-        b_dict['qlmp'] = value(m.dual[m.eq_q_balance[b]])
-        b_dict['pl'] = value(m.pl[b])
-        b_dict['ql'] = value(m.ql[b])
-        if hasattr(m, 'vj'):
-            b_dict['vm'] = tx_calc.calculate_vm_from_vj_vr(value(m.vj[b]), value(m.vr[b]))
-            b_dict['va'] = tx_calc.calculate_va_from_vj_vr(value(m.vj[b]), value(m.vr[b]))
-        else:
-            b_dict['vm'] = value(m.vm[b])
-            b_dict['va'] = value(m.va[b])
-
-    for k, k_dict in branches.items():
-        if hasattr(m,'pf'):
-            k_dict['pf'] = value(m.pf[k])
-            k_dict['qf'] = value(m.qf[k])
-#            k_dict['pt'] = value(m.pt[k])
-#            k_dict['qt'] = value(m.qt[k])
-        k_dict['pfl'] = value(m.pfl[k])
-        k_dict['qfl'] = value(m.qfl[k])
-
-    unscale_ModelData_to_pu(md, inplace=True)
-
-    return
-
+def printresults(results):
+    solver = results.attributes(element_type='Solver')
 
 if __name__ == '__main__':
-    pass
+    import os
+    from egret.parsers.matpower_parser import create_ModelData
+    from pyomo.environ import value
+
+    # set case and filepath
+    path = os.path.dirname(__file__)
+    #filename = 'pglib_opf_case3_lmbd.m'
+    #filename = 'pglib_opf_case5_pjm.m'
+    #filename = 'pglib_opf_case14_ieee.m'
+    #filename = 'pglib_opf_case30_ieee.m'
+    #filename = 'pglib_opf_case57_ieee.m'
+    #filename = 'pglib_opf_case118_ieee.m'
+    #filename = 'pglib_opf_case162_ieee_dtc.m'
+    filename = 'pglib_opf_case179_goc.m'
+    #filename = 'pglib_opf_case300_ieee.m'
+    #filename = 'pglib_opf_case500_tamu.m'
+    matpower_file = os.path.join(path, '../../download/pglib-opf-master/', filename)
+    md = create_ModelData(matpower_file)
+
+    # keyword arguments
+    kwargs = {'include_v_feasibility_slack':True}
+
+    # solve ACOPF
+    from egret.models.acopf import solve_acopf
+    md_ac, m_ac, results = solve_acopf(md, "ipopt", return_model=True,return_results=True,solver_tee=False)
+    print('ACOPF cost: $%3.2f' % md_ac.data['system']['total_cost'])
+    print(results.Solver)
+    gen = md_ac.attributes(element_type='generator')
+    bus = md_ac.attributes(element_type='bus')
+    branch = md_ac.attributes(element_type='branch')
+    pg_dict = {'acopf' : gen['pg']}
+    qg_dict = {'acopf' : gen['qg']}
+    pt_dict = {'acopf' : branch['pt']}
+    pf_dict = {'acopf' : branch['pf']}
+    pfl_dict = {'acopf' : branch['pfl']}
+    qt_dict = {'acopf' : branch['qt']}
+    qf_dict = {'acopf' : branch['qf']}
+    qfl_dict = {'acopf' : branch['qfl']}
+    va_dict = {'acopf' : bus['va']}
+    vm_dict = {'acopf' : bus['vm']}
+
+    # solve CCM
+    kwargs={'solved_model':m_ac}
+    import ccm as ccm
+    #ccm_model_generator=create_fixed_ccm_model to fix generator variables
+    md_ccm, m_ccm, results_ccm = ccm.solve_ccm(md_ac, "ipopt",ccm_model_generator=ccm.create_fixed_ccm_model, return_model=True,return_results=True,solver_tee=False, **kwargs)
+#    model,md = ccm.create_ccm_model(md_ac)
+#    from egret.common.solver_interface import _solve_model
+#    m, results = _solve_model(model,"ipopt",solver_tee=False)
+#    ccm._load_solution_to_model_data(m, md)
+    print('CCM cost: $%3.2f' % m_ccm.obj.expr())
+    print(results_ccm.Solver)
+    bus_attrs = md_ccm.attributes(element_type='bus')
+    if sum(value(m_ccm.p_slack_pos[b] + m_ccm.p_slack_neg[b]) for b in bus_attrs['names']) > 1e-6:
+        print('REAL POWER IMBALANCE')
+    if sum(value(m_ccm.q_slack_pos[b] + m_ccm.q_slack_neg[b]) for b in bus_attrs['names']) > 1e-6:
+        print('REACTIVE POWER IMBALANCE')
+    gen = md_ccm.attributes(element_type='generator')
+    bus = md_ccm.attributes(element_type='bus')
+    branch = md_ccm.attributes(element_type='branch')
+    pg_dict.update({'ccm': gen['pg']})
+    qg_dict.update({'ccm': gen['qg']})
+    pt_dict.update({'ccm': branch['pt']})
+    pf_dict.update({'ccm': branch['pf']})
+    pfl_dict.update({'ccm': branch['pfl']})
+    qt_dict.update({'ccm': branch['qt']})
+    qf_dict.update({'ccm': branch['qf']})
+    qfl_dict.update({'ccm': branch['qfl']})
+    va_dict.update({'ccm': bus['va']})
+    vm_dict.update({'ccm': bus['vm']})
+
+    # keyword arguments
+    kwargs = {}
+    #kwargs = {'include_v_feasibility_slack':True,'include_feasibility_slack':True}
+
+    # solve LCCM
+    md, m, results = solve_lccm(md_ac, "gurobi", lccm_model_generator=create_fixed_lccm_model, return_model=True,return_results=True,solver_tee=False, **kwargs)
+    print('LCCM cost: $%3.2f' % md.data['system']['total_cost'])
+    print(results.Solver)
+    if sum(value(m.p_slack_pos[b] + m.p_slack_neg[b]) for b in bus_attrs['names']) > 1e-6:
+        print('REAL POWER IMBALANCE')
+    if sum(value(m.q_slack_pos[b] + m.q_slack_neg[b]) for b in bus_attrs['names']) > 1e-6:
+        print('REACTIVE POWER IMBALANCE')
+    gen = md.attributes(element_type='generator')
+    bus = md.attributes(element_type='bus')
+    branch = md.attributes(element_type='branch')
+    pg_dict.update({'lccm' : gen['pg']})
+    qg_dict.update({'lccm' : gen['qg']})
+    pt_dict.update({'lccm' : branch['pt']})
+    pf_dict.update({'lccm' : branch['pf']})
+    pfl_dict.update({'lccm' : branch['pfl']})
+    qt_dict.update({'lccm' : branch['qt']})
+    qf_dict.update({'lccm' : branch['qf']})
+    qfl_dict.update({'lccm' : branch['qfl']})
+    va_dict.update({'lccm' : bus['va']})
+    vm_dict.update({'lccm' : bus['vm']})
+
+    # display results in dataframes
+    from fdf import compare_results
+    print('-pg:')
+    compare_results(pg_dict,'lccm','ccm')
+#    print(pd.DataFrame(pg_dict))
+    print('-qg:')
+    compare_results(qg_dict,'lccm','ccm')
+#    print(pd.DataFrame(qg_dict))
+#    print('-pt:')
+#    print(pd.DataFrame(pt_dict))
+    print('-pf:')
+    compare_results(pf_dict,'lccm','ccm')
+#    print(pd.DataFrame(pf_dict))
+    print('-pfl:')
+    compare_results(pfl_dict,'lccm','ccm')
+#    print(pd.DataFrame(pfl_dict))
+#    print('-qt:')
+#    print(pd.DataFrame(qt_dict))
+    print('-qf:')
+    compare_results(qf_dict,'lccm','ccm')
+#    print(pd.DataFrame(qf_dict))
+    print('-qfl:')
+    compare_results(qfl_dict,'lccm','ccm')
+#    print(pd.DataFrame(qfl_dict))
+#    print('-va:')
+#    print(pd.DataFrame(va_dict))
+    print('-vm:')
+    compare_results(vm_dict,'lccm','ccm')
+#    print(pd.DataFrame(vm_dict))
+
+
+
+# not solving pglib_opf_case57_ieee
+# pglib_opf_case500_tamu
+# pglib_opf_case162_ieee_dtc
+# pglib_opf_case179_goc
+# pglib_opf_case300_ieee

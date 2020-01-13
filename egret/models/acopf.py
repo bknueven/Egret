@@ -22,20 +22,20 @@ import egret.model_library.transmission.gen as libgen
 
 from egret.model_library.defn import FlowType, CoordinateType
 from egret.data.model_data import map_items, zip_items
-from math import pi, radians
+from math import pi, radians, inf
 
 
 def _include_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, bus_q_loads, penalty=1000):
     import egret.model_library.decl as decl
     slack_init = {k: 0 for k in bus_attrs['names']}
-    slack_bounds = {k: (0, sum(bus_p_loads.values())) for k in bus_attrs['names']}
+    slack_bounds = {k: (0, sum(bus_p_loads.values()) + abs(sum(bus_q_loads.values()))) for k in bus_attrs['names']}
     decl.declare_var('p_slack_pos', model=model, index_set=bus_attrs['names'],
                      initialize=slack_init, bounds=slack_bounds
                      )
     decl.declare_var('p_slack_neg', model=model, index_set=bus_attrs['names'],
                      initialize=slack_init, bounds=slack_bounds
                      )
-    slack_bounds = {k: (0, sum(bus_q_loads.values())) for k in bus_attrs['names']}
+    #slack_bounds = {k: (0, sum(bus_q_loads.values())) for k in bus_attrs['names']}
     decl.declare_var('q_slack_pos', model=model, index_set=bus_attrs['names'],
                      initialize=slack_init, bounds=slack_bounds
                      )
@@ -664,9 +664,17 @@ def create_riv_acopf_model(model_data, include_feasibility_slack=False):
     return model, md
 
 
-def _load_solution_to_model_data(m, md):
+def _load_solution_to_model_data(m, md, results):
     from pyomo.environ import value
     from egret.model_library.transmission.tx_utils import unscale_ModelData_to_pu
+
+    if not hasattr(md,'results'):
+        md.data['results'] = dict()
+    md.data['results']['time'] = results.Solver.Time
+    md.data['results']['#_cons'] = results.Problem[0]['Number of constraints']
+    md.data['results']['#_vars'] = results.Problem[0]['Number of variables']
+    #md.data['results']['#_nz'] = results.Problem[0]['Number of nonzeros']
+    md.data['results']['termination'] = results.solver.termination_condition.__str__()
 
     # save results data to ModelData object
     gens = dict(md.elements(element_type='generator'))
@@ -708,6 +716,8 @@ def _load_solution_to_model_data(m, md):
             k_dict['pt'] = value(tx_calc.calculate_p(value(m.itr[k]), value(m.itj[k]), value(m.vr[b]), value(m.vj[b])))
             k_dict['qt'] = value(tx_calc.calculate_q(value(m.itr[k]), value(m.itj[k]), value(m.vr[b]), value(m.vj[b])))
 
+    md.data['system']['ploss'] = sum(k_dict['pf'] + k_dict['pt'] for k,k_dict in branches.items())
+    md.data['system']['qloss'] = sum(k_dict['qf'] + k_dict['qt'] for k,k_dict in branches.items())
 
     unscale_ModelData_to_pu(md, inplace=True)
 
@@ -762,7 +772,7 @@ def solve_acopf(model_data,
     m, results, solver = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
                               symbolic_solver_labels=symbolic_solver_labels,options=options, return_solver=True)
 
-    _load_solution_to_model_data(m, md)
+    _load_solution_to_model_data(m, md, results)
     #m.pprint()
 
     if return_model and return_results:

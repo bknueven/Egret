@@ -279,6 +279,8 @@ scaled_attributes = {
                                                         'qf',
                                                         'pt',
                                                         'qt',
+                                                        'pfl',
+                                                        'qfl'
                                                         ],
                        ('element_type', 'shunt') : [
                                                       'bs',
