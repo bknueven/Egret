@@ -12,6 +12,7 @@ from pyomo.solvers.plugins.solvers.persistent_solver import PersistentSolver
 from egret.model_library.defn import ApproximationType
 from egret.common.log import logger
 import egret.model_library.transmission.branch as libbranch
+import egret.model_library.transmission.bus as libbus
 import pyomo.environ as pe
 import numpy as np
 
@@ -32,14 +33,20 @@ def populate_default_ptdf_options(ptdf_options):
         ptdf_options['abs_flow_tol'] = 1.e-3
     if 'rel_flow_tol' not in ptdf_options:
         ptdf_options['rel_flow_tol'] = 1.e-5
+    if 'pu_vm_tol' not in ptdf_options:
+        ptdf_options['pu_vm_tol'] = 1.e-5
     if 'iteration_limit' not in ptdf_options:
         ptdf_options['iteration_limit'] = 100000
     if 'lp_iteration_limit' not in ptdf_options:
         ptdf_options['lp_iteration_limit'] = 100
     if 'max_violations_per_iteration' not in ptdf_options:
-        ptdf_options['max_violations_per_iteration'] = 1
+        ptdf_options['max_violations_per_iteration'] = 5
     if 'lazy' not in ptdf_options:
         ptdf_options['lazy'] = True
+    if 'lazy_reactive' not in ptdf_options:
+        ptdf_options['lazy_reactive'] = False
+    if 'lazy_voltage' not in ptdf_options:
+        ptdf_options['lazy_voltage'] = False
     if 'load_from' not in ptdf_options:
         ptdf_options['load_from'] = None
     if 'save_to' not in ptdf_options:
@@ -73,121 +80,216 @@ def check_and_scale_ptdf_options(ptdf_options, baseMVA):
 ## to hold the indicies of the violations
 ## in the model or block
 def add_monitored_branch_tracker(mb):
-    mb._lt_idx_monitored = list()
-    mb._gt_idx_monitored = list()
+    mb._thermal_idx_monitored = list()
 
-## violation checker
-def check_violations(mb, md, PTDF, max_viol_add, time=None):
+def add_monitored_vm_tracker(mb):
+    mb._vm_idx_monitored = list()
 
-    NWV = np.fromiter((pe.value(mb.p_nw[b]) for b in PTDF.bus_iterator()), float, count=len(PTDF.buses_keys))
-    NWV += PTDF.phi_adjust_array
+## transmission violation checker
+def check_violations(mb, md, branch_attrs, bus_attrs, max_viol_add, time=None):
+    import egret.model_library.transmission.tx_calc as tx_calc
+    import scipy as sp
 
-    PFV  = PTDF.PTDFM.dot(NWV)
-    PFV += PTDF.phase_shift_array
+    buses = dict(md.elements(element_type='bus'))
 
-    ## calculate the negative of the violations (for easy sorting)
-    gt_viol_array = PTDF.enforced_branch_limits - PFV
-    lt_viol_array = PFV + PTDF.enforced_branch_limits
+    enforced_branch_limits = branch_attrs['rating_long_term']
+    index_set_bus = bus_attrs['names']
+    index_set_branch = branch_attrs['names']
 
-    gt_viol = np.nonzero(gt_viol_array < 0)[0]
-    lt_viol = np.nonzero(lt_viol_array < 0)[0]
+    _len_bus = len(index_set_bus)
+    _len_branch = len(index_set_branch)
 
-    ## these will hold the violations 
+    ## Back-solve for theta then calculate real power flows with sparse sensitivity matrix
+    THETA = tx_calc.linsolve_theta_fdf(mb, md)
+    Ft = md.data['system']['Ft']
+    ft_c = md.data['system']['ft_c']
+    PFV = Ft.dot(THETA) + ft_c
+
+    ## Back-solve for vmag then calculate reactive power flows with sparse sensitivity matrix
+    if hasattr(mb, "qg"):
+        VMAG = tx_calc.linsolve_vmag_fdf(mb, md)
+        Fv = md.data['system']['Fv']
+        fv_c = md.data['system']['fv_c']
+        QFV = Fv.dot(VMAG) + fv_c
+        SV = np.sqrt(np.square(PFV) + np.square(QFV))
+    else:
+        VMAG = np.ones(_len_bus)
+        QFV = np.zeros(_len_branch)
+        SV = PFV
+
+    ## find thermal violations
+    branch_limits = np.array([enforced_branch_limits[k] for k in index_set_branch])
+    thermal_idx_monitored = mb._thermal_idx_monitored
+    t_viol_num, t_monitored_viol_num, t_viol_lazy = \
+        _find_violation_set(mb, md, index_set_branch, SV, -branch_limits, branch_limits, thermal_idx_monitored,
+                            max_viol_add, warning_generator=_generate_flow_viol_warning)
+
+    ## find vmag violations
+    if hasattr(mb, "qg"):
+        vmag_lb_limits = np.array([bus_attrs['v_min'][b] for b in index_set_bus])
+        vmag_ub_limits = np.array([bus_attrs['v_max'][b] for b in index_set_bus])
+        vm_idx_monitored = mb._vm_idx_monitored
+        v_viol_num, v_monitored_viol_num, v_viol_lazy = \
+            _find_violation_set(mb, md, index_set_bus, VMAG, vmag_lb_limits, vmag_ub_limits, vm_idx_monitored,
+                                max_viol_add, warning_generator=_generate_vmag_viol_warning)
+    else:
+        v_viol_num, v_monitored_viol_num, v_viol_lazy = (0,0,set())
+
+    viol_num = t_viol_num + v_viol_num
+    monitored_viol_num = t_monitored_viol_num + v_monitored_viol_num
+
+    return SV, t_viol_lazy, VMAG, v_viol_lazy, viol_num, monitored_viol_num
+
+def _find_violation_set(mb, md, index_set, actuals, lb_limits, ub_limits, idx_monitored, max_viol_add,
+                        warning_generator=None,time=None):
+
+    if warning_generator is None:
+        warning_generator = lambda *args, **kwargs: None
+
+    ## we're doing this backwards for argpartition
+    ## most negative -> highest violations
+    ub_viol_array = ub_limits - actuals
+    lb_viol_array = actuals - lb_limits
+
+    ub_viol = set(np.nonzero(ub_viol_array < 0)[0])
+    lb_viol = set(np.nonzero(lb_viol_array < 0)[0])
+
+    ## these will hold the violations
     ## we found this iteration
-    gt_viol = frozenset(gt_viol)
-    lt_viol = frozenset(lt_viol)
-
-    ## get the lines we're monitoring
-    gt_idx_monitored = mb._gt_idx_monitored
-    lt_idx_monitored = mb._lt_idx_monitored
+    viol_set = ub_viol.union(lb_viol)
 
     ## get the lines for which we've found a violation that's
     ## in the model
-    gt_viol_in_mb = gt_viol.intersection(gt_idx_monitored)
-    lt_viol_in_mb = lt_viol.intersection(lt_idx_monitored)
+    viol_in_mb = viol_set.intersection(idx_monitored)
 
     ## print a warning for these lines
     ## check if the found violations are in the model and print warning
     baseMVA = md.data['system']['baseMVA']
-    for i in lt_viol_in_mb:
-        bn = PTDF.branches_keys[i]
-        thermal_limit = PTDF.branch_limits_array[i]
-        logger.warning(_generate_flow_viol_warning('LB', mb, bn, PFV[i], -thermal_limit, baseMVA, time))
+    for i in viol_in_mb:
+        bn = index_set[i]
+        logger.warning(warning_generator(mb, bn, lb_limits[i], actuals[i], ub_limits[i], baseMVA, time))
 
-    for i in gt_viol_in_mb:
-        bn = PTDF.branches_keys[i]
-        thermal_limit = PTDF.branch_limits_array[i]
-        logger.warning(_generate_flow_viol_warning('UB', mb, bn, PFV[i], thermal_limit, baseMVA, time))
-
-    ## *t_viol_lazy will hold the lines we're adding
+    ## thermal_viol_lazy will hold the lines we're adding
     ## this iteration -- don't want to add lines
     ## that are already in the monitored set
-    gt_viol_lazy = gt_viol.difference(gt_idx_monitored)
-    lt_viol_lazy = lt_viol.difference(lt_idx_monitored)
+    viol_lazy = viol_set.difference(idx_monitored)
 
     ## limit the number of lines we add in one iteration
     ## if we have too many violations, just take those largest
     ## in absolute value in either direction
-    if len(gt_viol_lazy)+len(lt_viol_lazy) > max_viol_add:
+    if len(viol_lazy) > max_viol_add:
 
-        ## for those in the monitored set, assume they're feasible for
-        ## the purposes of sorting the worst violations, which means
-        ## resetting the values for these lines as computed above
+        viol_slicer = list(viol_lazy)
 
-        ## use what most solvers consider +infty
-        LARGE_CONST = 1e+100
-        gt_viol_array[gt_idx_monitored] = LARGE_CONST
-        lt_viol_array[lt_idx_monitored] = LARGE_CONST
+        ## For sorting, we want the most negative values to be the largest violations
+        viol_array = np.minimum(ub_viol_array[viol_slicer], lb_viol_array[viol_slicer])
 
         ## give the order of the first max_viol_add violations
-        measured_gt_viol = np.argpartition(gt_viol_array, range(max_viol_add))
-        measured_lt_viol = np.argpartition(lt_viol_array, range(max_viol_add))
+        measured_viol = np.argpartition(viol_array, range(max_viol_add))
+        viol_slicer_indices = measured_viol[0:max_viol_add]
 
-        measured_gt_viol_pos = 0
-        measured_lt_viol_pos = 0
-        gt_viol_lazy = set()
-        lt_viol_lazy = set()
-        for _ in range(max_viol_add):
-            gt_v = gt_viol_array[measured_gt_viol[measured_gt_viol_pos]]
-            lt_v = lt_viol_array[measured_lt_viol[measured_lt_viol_pos]]
+        viol_lazy = set(viol_slicer[i] for i in viol_slicer_indices)
 
-            ## because we negated for sorting, this means the
-            ## overall violation is more for the gt side
-            ## dont have any more actual violations
-            if gt_v > 0 and lt_v > 0:
-                break
-            elif gt_v < lt_v:
-                gt_viol_lazy.add(measured_gt_viol[measured_gt_viol_pos])
-                measured_gt_viol_pos += 1
-            else:
-                lt_viol_lazy.add(measured_lt_viol[measured_lt_viol_pos])
-                measured_lt_viol_pos += 1
+    viol_num = len(viol_set)
+    monitored_viol_num = len(viol_in_mb)
 
-    viol_num = len(gt_viol)+len(lt_viol)
-    monitored_viol_num = len(lt_viol_in_mb)+len(gt_viol_in_mb)
-
-    return PFV, viol_num, monitored_viol_num, gt_viol_lazy, lt_viol_lazy
+    return viol_num, monitored_viol_num, viol_lazy
     
-def _generate_flow_viol_warning(sense, mb, bn, flow, limit, baseMVA, time):
-    ret_str = "WARNING: line {0} ({1}) is in the  monitored set".format(bn, sense)
+def _generate_flow_viol_warning(mb, bn, LB, actual, UB, baseMVA, time=None):
+    ret_str = "WARNING: line {0} is in the  monitored set".format(bn)
     if time is not None:
         ret_str += " at time {}".format(time)
-    ret_str += ", but flow exceeds limit!!\n\t flow={0}, limit={1}".format(flow*baseMVA, limit*baseMVA, sense)
-    ret_str += ", model_flow={}".format(pe.value(mb.pf[bn])*baseMVA)
+    ret_str += ", but flow exceeds limit!!\n\t apparent={0}, LB={1}, UB={2}".format(actual*baseMVA, LB*baseMVA, UB*baseMVA)
+    ret_str += ", model_pf={}".format(pe.value(mb.pf[bn])*baseMVA)
+    if hasattr(mb, "qf"):
+        ret_str += ", model_qf={}".format(pe.value(mb.qf[bn]) * baseMVA)
     return ret_str
 
-def _generate_flow_monitor_message(sense, bn, flow, limit, baseMVA, time): 
-    ret_str = "Adding line {0} ({1}) to monitored set".format(bn, sense)
+
+def _generate_vmag_viol_warning(mb, bn, LB, actual, UB, baseMVA=None, time=None):
+    ret_str = "WARNING: bus {0} is in the  monitored set".format(bn)
     if time is not None:
         ret_str += " at time {}".format(time)
-    ret_str += ", flow={0}, limit={1}".format(flow*baseMVA, limit*baseMVA)
+    ret_str += ", but voltage exceeds limit!!\n\t vmag={0}, LB={1}, UB={2}".format(actual, LB, UB)
+    ret_str += ", model_vm={}".format(pe.value(mb.vm[bn]))
     return ret_str
 
-## violation adder
-def add_violations(gt_viol_lazy, lt_viol_lazy, PFV, mb, md, solver, ptdf_options,
-                    PTDF, time=None):
+
+def _generate_flow_monitor_message(bn, flow, limit, baseMVA, time):
+    ret_str = "Adding line {0} to monitored set".format(bn)
+    if time is not None:
+        ret_str += " at time {}".format(time)
+    ret_str += ", apparent={0}, limit={1}".format(flow*baseMVA, limit*baseMVA)
+    return ret_str
+
+def _generate_vmag_monitor_message(bn, vm, lb_limit, ub_limit, time):
+    ret_str = "Adding bus {0} to monitored set".format(bn)
+    if time is not None:
+        ret_str += " at time {}".format(time)
+    ret_str += ", vmag={0}, LB={1}, UB={2}".format(vm, lb_limit, ub_limit)
+    return ret_str
+
+## thermal violation adder
+def add_thermal_violations(thermal_viol_lazy, SV, mb, md, solver, ptdf_options, branch_attrs,
+                    time=None):
 
     model = mb.model()
+
+    branch_name_list = branch_attrs['names']
+
+    baseMVA = md.data['system']['baseMVA']
+
+    persistent_solver = isinstance(solver, PersistentSolver)
+
+    include_reactive = hasattr(mb, "qg")
+
+    ## static information between runs
+    rel_ptdf_tol = ptdf_options['rel_ptdf_tol']
+    abs_ptdf_tol = ptdf_options['abs_ptdf_tol']
+
+    ## helper for generating pf
+    def _iter_over_viol_set(viol_set):
+        for i in viol_set:
+            bn = branch_name_list[i]
+            if bn not in mb.eq_pf_branch:
+                ## add eq_pf_branch constraint
+                ptdf = branch_attrs['ptdf'][bn]
+                ptdf_c = branch_attrs['ptdf_c'][bn]
+                expr = libbranch.get_expr_branch_pf_fdf_approx(mb, bn, ptdf, ptdf_c, rel_tol=None, abs_tol=None)
+                mb.eq_pf_branch[bn] = mb.pf[bn] == expr
+                if include_reactive:
+                    ## add eq_qf_branch constraint
+                    qtdf = branch_attrs['qtdf'][bn]
+                    qtdf_c = branch_attrs['qtdf_c'][bn]
+                    expr = libbranch.get_expr_branch_qf_fdf_approx(mb, bn, qtdf, qtdf_c, rel_tol=None, abs_tol=None)
+                    mb.eq_qf_branch[bn] = mb.qf[bn] == expr
+                    ## add ineq_branch_thermal_limit constraint
+                    libbranch.add_constr_branch_thermal_limit(mb, bn, branch_attrs['rating_long_term'][bn])
+            yield i, bn
+
+    pf = mb.pf
+    constr = mb.eq_pf_branch
+
+    thermal_viol_in_mb = mb._thermal_idx_monitored
+    for i, bn in _iter_over_viol_set(thermal_viol_lazy):
+        thermal_limit = branch_attrs['rating_long_term'][bn]
+        logger.info(_generate_flow_monitor_message(bn, SV[i], thermal_limit, baseMVA, time))
+        thermal_viol_in_mb.append(i)
+        if persistent_solver:
+            solver.add_constraint(constr[bn])
+            if include_reactive:
+                solver.add_constraint(mb.eq_qf_branch[bn])
+                for x,y in mb._fdf_unitcircle:
+                    solver.add_constraint(mb.ineq_branch_thermal_limit[bn,x,y])
+
+## voltage violation adder
+def add_vmag_violations(vmag_viol_lazy, VMAG, mb, md, solver, ptdf_options, bus_attrs,
+                    time=None):
+    import pandas as pd
+
+    model = mb.model()
+
+    bus_name_list = bus_attrs['names']
 
     baseMVA = md.data['system']['baseMVA']
 
@@ -200,31 +302,100 @@ def add_violations(gt_viol_lazy, lt_viol_lazy, PFV, mb, md, solver, ptdf_options
     ## helper for generating pf
     def _iter_over_viol_set(viol_set):
         for i in viol_set:
-            bn = PTDF.branches_keys[i]
-            if mb.pf[bn].expr is None:
-                expr = libbranch.get_power_flow_expr_ptdf_approx(mb, bn, PTDF, abs_ptdf_tol=abs_ptdf_tol, rel_ptdf_tol=rel_ptdf_tol)
-                mb.pf[bn] = expr
+            bn = bus_name_list[i]
+            if bn not in mb.eq_vm_bus:
+                ## add eq_pf_branch constraint
+                vdf = bus_attrs['vdf'][bn]
+                vdf_c = bus_attrs['vdf_c'][bn]
+                expr = libbus.get_vm_expr_vdf_approx(mb, bn, vdf, vdf_c, rel_tol=None, abs_tol=None)
+                mb.eq_vm_bus[bn] = mb.vm[bn] == expr
             yield i, bn
 
-    constr = mb.ineq_pf_branch_thermal_lb
-    lt_viol_in_mb = mb._lt_idx_monitored
-    for i, bn in _iter_over_viol_set(lt_viol_lazy):
-        thermal_limit = PTDF.branch_limits_array[i]
-        logger.info(_generate_flow_monitor_message('LB', bn, PFV[i], -thermal_limit, baseMVA, time))
-        constr[bn] = (-thermal_limit, mb.pf[bn], None)
-        lt_viol_in_mb.append(i)
+    vm = mb.vm
+    constr = mb.eq_vm_bus
+
+    vmag_viol_in_mb = mb._vm_idx_monitored
+    for i, bn in _iter_over_viol_set(vmag_viol_lazy):
+        lb_limit = bus_attrs['v_min'][bn]
+        ub_limit = bus_attrs['v_max'][bn]
+        logger.info(_generate_vmag_monitor_message(bn, VMAG[i], lb_limit, ub_limit, time))
+        vmag_viol_in_mb.append(i)
         if persistent_solver:
             solver.add_constraint(constr[bn])
 
-    constr = mb.ineq_pf_branch_thermal_ub
-    gt_viol_in_mb = mb._gt_idx_monitored
-    for i, bn in _iter_over_viol_set(gt_viol_lazy):
-        thermal_limit = PTDF.branch_limits_array[i]
-        logger.info(_generate_flow_monitor_message('UB', bn, PFV[i], thermal_limit, baseMVA, time))
-        constr[bn] = (None, mb.pf[bn], thermal_limit)
-        gt_viol_in_mb.append(i)
+
+def _lazy_model_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic_solver_labels=False, iteration_limit=100000,
+                           vars_to_load=None):
+    from pyomo.solvers.plugins.solvers.persistent_solver import PersistentSolver
+
+    branches = dict(md.elements(element_type='branch'))
+    buses = dict(md.elements(element_type='bus'))
+
+    branch_attrs = md.attributes(element_type='branch')
+    bus_attrs = md.attributes(element_type='bus')
+
+    ptdf_options = m._ptdf_options
+
+    rel_flow_tol = ptdf_options['rel_flow_tol']
+    abs_flow_tol = ptdf_options['abs_flow_tol']
+
+    branch_limits = branch_attrs['rating_long_term']
+    #branch_limits = PTDF.branch_limits_array
+
+    ## only enforce the relative and absolute, within tollerance
+    #PTDF.enforced_branch_limits = np.maximum(branch_limits*(1+rel_flow_tol), branch_limits+abs_flow_tol)
+
+    persistent_solver = isinstance(solver, PersistentSolver)
+
+    for i in range(iteration_limit):
+
+        ## Check line flow violations
+        #SV, viol_num, mon_viol_num, thermal_viol_lazy = check_violations(m, md, branch_attrs, bus_attrs,
+        #                                                                 ptdf_options['max_violations_per_iteration'])
+        SV, thermal_viol_lazy, VMAG, vmag_viol_lazy, viol_num, mon_viol_num = \
+            check_violations(m, md, branch_attrs, bus_attrs, ptdf_options['max_violations_per_iteration'])
+
+        iter_status_str = "iteration {0}, found {1} violation(s)".format(i,viol_num)
+        if mon_viol_num:
+            iter_status_str += " ({} already monitored)".format(mon_viol_num)
+
+        print(iter_status_str)
+
+        if viol_num <= 0:
+            ## in this case, there are no violations!
+            ## load the duals now too, if we're using a persistent solver
+            if persistent_solver:
+                solver.load_duals()
+            return LazyPTDFTerminationCondition.NORMAL
+
+        elif viol_num == mon_viol_num:
+            print('WARNING: Terminating with monitored violations!')
+            print('         Result is not transmission feasible.')
+            if persistent_solver:
+                solver.load_duals()
+            return LazyPTDFTerminationCondition.FLOW_VIOLATION
+
+        add_thermal_violations(thermal_viol_lazy, SV, m, md, solver, ptdf_options, branch_attrs)
+
+        if ptdf_options['lazy_voltage']:
+            add_vmag_violations(vmag_viol_lazy, VMAG, m, md, solver, ptdf_options, bus_attrs)
+
+        #m.ineq_pf_branch_thermal_lb.pprint()
+        #m.ineq_pf_branch_thermal_ub.pprint()
+
         if persistent_solver:
-            solver.add_constraint(constr[bn])
+            solver.solve(m, tee=solver_tee, load_solutions=False, save_results=False)
+            solver.load_vars(vars_to_load=vars_to_load)
+        else:
+            solver.solve(m, tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels)
+
+    else: # we hit the iteration limit
+        print('WARNING: Exiting on maximum iterations for lazy PTDF model.')
+        print('         Result is not transmission feasible.')
+        if persistent_solver:
+            solver.load_duals()
+        return LazyPTDFTerminationCondition.ITERATION_LIMIT
+
 
 
 def _binary_var_generator(instance):

@@ -173,11 +173,18 @@ def declare_eq_p_net_withdraw_fdf(model, index_set, buses, bus_p_loads, gens_by_
 
     m.eq_p_net_withdraw_at_bus = pe.Constraint(con_set)
 
-    for b in index_set:
-        bus = buses[b]
-        m.eq_p_net_withdraw_at_bus[b] = m.p_nw[b] == ( bus_gs_fixed_shunts[b] * ( 2 * bus['vm'] * m.vm[b] - bus['vm']**2)
-                                                    + ( m.pl[b] if bus_p_loads[b] != 0.0 else 0.0 )
-                                                    - sum( m.pg[g] for g in gens_by_bus[b] ) )
+    if hasattr(m, 'vm'):
+        for b in index_set:
+            bus = buses[b]
+            m.eq_p_net_withdraw_at_bus[b] = m.p_nw[b] == ( bus_gs_fixed_shunts[b] * ( 2 * bus['vm'] * m.vm[b] - bus['vm']**2 )
+                                                        + ( m.pl[b] if bus_p_loads[b] != 0.0 else 0.0 )
+                                                        - sum( m.pg[g] for g in gens_by_bus[b] ) )
+    else:
+        for b in index_set:
+            bus = buses[b]
+            m.eq_p_net_withdraw_at_bus[b] = m.p_nw[b] == ( bus_gs_fixed_shunts[b] * bus['vm']
+                                                        + ( m.pl[b] if bus_p_loads[b] != 0.0 else 0.0 )
+                                                        - sum( m.pg[g] for g in gens_by_bus[b] ) )
 
         #if bus_gs_fixed_shunts[b] != 0:
         #    print('Bus {} has shunt conductance {}'.format(b,bus_gs_fixed_shunts[b]))

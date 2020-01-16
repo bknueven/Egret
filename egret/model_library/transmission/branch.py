@@ -1145,33 +1145,48 @@ def declare_fdf_thermal_limit(model, index_set, thermal_limits, cuts=10):
     """
     import cmath
     unit_radius = 1
-    points = [(c.real, c.imag) for c in (cmath.rect(unit_radius, math.radians(a)) for a in range(0, 360, 360 // int(cuts)))]
-    points_dict = {i: points[i] for i in range(len(points))}
-    points_list = list(points_dict.keys())
-
-    index_over = []
-    for i in index_set:
-        for p in points_list:
-            index_over.append((i,p))
+    model._fdf_unitcircle = pe.Set(initialize=[(c.real, c.imag) for c in (cmath.rect(unit_radius, math.radians(a)) \
+                                                       for a in range(0, 360, 360 // int(cuts)))], ordered=True)
 
     m = model
-    con_set = decl.declare_set('_con_ineq_branch_thermal_limit', model=model, index_set=index_over)
+
+    index_set_generator = ( (bn,x,y) for bn in index_set for x,y in model._fdf_unitcircle)
+
+    con_set = decl.declare_set('_con_ineq_branch_thermal_limit', model=model, index_set=index_set_generator)
 
     m.ineq_branch_thermal_limit = pe.Constraint(con_set)
 
-    for (branch_name, p) in con_set:
-        if thermal_limits[branch_name] is None:
+    if hasattr(model,"_ptdf_options") and model._ptdf_options['lazy']:
+        return
+
+    for bn in index_set:
+        thermal_limit = thermal_limits[bn]
+        add_constr_branch_thermal_limit(model, bn, thermal_limit)
+
+
+def add_constr_branch_thermal_limit(model, branch_name, thermal_limit):
+    """
+    Create the inequality constraints for the branch thermal limits
+    based on the power variables for the fdf model.
+    """
+
+    m = model
+
+    for x,y in m._fdf_unitcircle:
+        if thermal_limit is None:
             continue
 
-        x, y = points_dict[p]
-        _pf = x * thermal_limits[branch_name]
-        _qf = y * thermal_limits[branch_name]
+        #x, y = p
+        _pf = x * thermal_limit
+        _qf = y * thermal_limit
 
-        m.ineq_branch_thermal_limit[branch_name,p] = _pf*m.pf[branch_name] + _qf*m.qf[branch_name]\
-                                                     <= thermal_limits[branch_name]**2
+        ## Taylor series form
+        model.ineq_branch_thermal_limit[branch_name,x,y] = 2 * _pf * m.pf[branch_name] + 2 * _qf * m.qf[branch_name] \
+                                                     <= thermal_limit**2 + _pf**2 + _qf**2
 
-        # m.ineq_branch_thermal_limit[branch_name,p] = _pf * (m.pf[branch_name] + 0.5*m.pfl[branch_name]) + _qf * (m.qf[branch_name] + 0.5*m.qfl[branch_name]) \
-        #                                              <= thermal_limits[branch_name]**2
+        ## Bilinear form
+        #model.ineq_branch_thermal_limit[branch_name, x, y] = _pf * m.pf[branch_name] + _qf * m.qf[branch_name] \
+        #                                             <= thermal_limit**2
 
 
 def declare_eq_branch_midpoint_power(model, index_set, branches, coordinate_type=CoordinateType.POLAR):

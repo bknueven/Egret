@@ -25,6 +25,7 @@ from egret.model_library.defn import ApproximationType, SensitivityCalculationMe
 from egret.data.model_data import zip_items
 import egret.data.data_utils_deprecated as data_utils_deprecated
 import egret.model_library.decl as decl
+from math import pi, radians, inf
 
 
 def _include_system_feasibility_slack(model, bus_attrs, gen_attrs, bus_p_loads, bus_q_loads, penalty=1000):
@@ -128,6 +129,11 @@ def create_lccm_model(model_data, include_feasibility_slack=False, include_v_fea
                           bounds=zip_items(bus_attrs['v_min'], bus_attrs['v_max'])
                           )
     libbus.declare_var_va(model, bus_attrs['names'], initialize=bus_attrs['va'])
+
+    ### fix the reference bus
+    ref_bus = md.data['system']['reference_bus']
+    ref_angle = md.data['system']['reference_bus_angle']
+    model.va[ref_bus].fix(radians(ref_angle))
 
     ### include the feasibility slack for the bus balances
     p_rhs_kwargs = {}
@@ -341,6 +347,11 @@ def _load_solution_to_model_data(m, md, results):
         k_dict['qf'] = value(m.qf[k])
         k_dict['pfl'] = value(m.pfl[k])
         k_dict['qfl'] = value(m.qfl[k])
+        k_dict['pf_dual'] = value(m.dual[m.eq_pf_branch[k]])
+        k_dict['qf_dual'] = value(m.dual[m.eq_qf_branch[k]])
+
+    md.data['system']['ploss'] = sum(k_dict['pfl'] for k, k_dict in branches.items())
+    md.data['system']['qloss'] = sum(k_dict['qfl'] for k, k_dict in branches.items())
 
     unscale_ModelData_to_pu(md, inplace=True)
 

@@ -707,6 +707,8 @@ def _load_solution_to_model_data(m, md, results):
             k_dict['qt'] = value(m.qt[k])
             k_dict['pfl'] = value(m.pf[k]) + value(m.pt[k])
             k_dict['qfl'] = value(m.qf[k]) + value(m.qt[k])
+            k_dict['pf_dual'] = value(m.dual[m.eq_pf_branch[k]])
+            k_dict['qf_dual'] = value(m.dual[m.eq_qf_branch[k]])
 
         if hasattr(m,'irf'):
             b = k_dict['from_bus']

@@ -539,23 +539,24 @@ def _load_solution_to_model_data(m, md, results):
         b_dict['lmp'] = value(m.dual[m.eq_p_balance])
         b_dict['qlmp'] = value(m.dual[m.eq_q_balance])
         for k, k_dict in branches.items():
-            # TODO: check if line congestion calc (i.e. remove from/to bus conditionals?)
-            if k_dict['from_bus'] == b or k_dict['to_bus'] == b:
-                ptdf = k_dict['ptdf']
-                pldf = k_dict['pldf']
-                b_dict['lmp'] += ptdf[b]*value(m.dual[m.eq_pf_branch[k]])
-                b_dict['lmp'] += pldf[b]*value(m.dual[m.eq_pfl_branch[k]])
+            # TODO: check if if statement needed in line congestion calc (reapply from/to bus conditionals?)
+            #if k_dict['from_bus'] == b or k_dict['to_bus'] == b:
+            ptdf = k_dict['ptdf']
+            pldf = k_dict['pldf']
+            b_dict['lmp'] += ptdf[b]*value(m.dual[m.eq_pf_branch[k]])
+            b_dict['lmp'] += pldf[b]*value(m.dual[m.eq_pfl_branch[k]])
 
-                qtdf = k_dict['qtdf']
-                qldf = k_dict['qldf']
-                b_dict['qlmp'] += qtdf[b]*value(m.dual[m.eq_qf_branch[k]])
-                b_dict['qlmp'] += qldf[b]*value(m.dual[m.eq_qfl_branch[k]])
+            qtdf = k_dict['qtdf']
+            qldf = k_dict['qldf']
+            b_dict['qlmp'] += qtdf[b]*value(m.dual[m.eq_qf_branch[k]])
+            b_dict['qlmp'] += qldf[b]*value(m.dual[m.eq_qfl_branch[k]])
 
     for k, k_dict in branches.items():
         k_dict['pf'] = value(m.pf[k])
         k_dict['qf'] = value(m.qf[k])
         k_dict['pfl'] = value(m.pfl[k])
         k_dict['qfl'] = value(m.qfl[k])
+
 
     unscale_ModelData_to_pu(md, inplace=True)
 

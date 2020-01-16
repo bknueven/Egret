@@ -214,6 +214,13 @@ def record_results(idx, mult, md):
     '''
     writes model data (md) object to .json file
     '''
+
+    # delete sensitivity matrices from 'system'. May need to add these back to modelData when opening the .json file.
+    sensi = ['Ft', 'ft_c', 'Fv', 'fv_c', 'Lt', 'lt_c', 'Lv', 'lv_c']
+    for s in sensi:
+        if s in md.data['system']:
+            del md.data['system'][s]
+
     filename = md.data['system']['model_name'] + '_' + idx + '_{0:04.0f}'.format(mult*1000)
     md.data['system']['mult'] = mult
 
@@ -742,17 +749,17 @@ if __name__ == '__main__':
 
     test_model_dict = \
         {'ccm' :              False,
-         'lccm' :             True,
-         'fdf' :              True,
+         'lccm' :             False,
+         'fdf' :              False,
          'fdf_simplified' :   True,
          'ptdf_losses' :      False,
          'ptdf' :             False,
-         'btheta_losses' :    True,
-         'btheta' :           True
+         'btheta_losses' :    False,
+         'btheta' :           False
          }
 
-    #solve_approximation_models(test_case, test_model_dict, init_min=0.9, init_max=1.1, steps=20)
-    generate_sensitivity_plot(test_case, test_model_dict, data_generator=sum_infeas, show_plot=True)
+    solve_approximation_models(test_case, test_model_dict, init_min=0.9, init_max=1.1, steps=20)
+    #generate_sensitivity_plot(test_case, test_model_dict, data_generator=sum_infeas, show_plot=True)
     #generate_sensitivity_plot(test_case, test_model_dict, data_generator=sum_infeas)
     #generate_sensitivity_plot(test_case, test_model_dict, data_generator=kcl_p_infeas)
     #generate_sensitivity_plot(test_case, test_model_dict, data_generator=kcl_q_infeas)

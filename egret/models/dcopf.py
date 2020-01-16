@@ -171,7 +171,8 @@ def create_btheta_dcopf_model(model_data, include_angle_diff_limits=False, inclu
     return model, md
 
 def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_point=BasePointType.FLATSTART, ptdf_options=None):
-    
+    import egret.data.data_utils_deprecated as data_utils_deprecated
+
     if ptdf_options is None:
         ptdf_options = dict()
 
@@ -183,6 +184,7 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_po
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
 
+    data_utils_deprecated.create_dicts_of_ptdf(md, base_point=BasePointType.FLATSTART)
 
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))
@@ -191,6 +193,7 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_po
     shunts = dict(md.elements(element_type='shunt'))
 
     gen_attrs = md.attributes(element_type='generator')
+    branch_attrs = md.attributes(element_type='branch')
     ## to keep things in order
     buses_idx = tuple(buses.keys())
     branches_idx = tuple(branches.keys())
@@ -237,54 +240,53 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_po
                                               gens_by_bus=gens_by_bus,
                                               bus_gs_fixed_shunts=bus_gs_fixed_shunts,
                                               )
-    
+
     ### add "blank" power flow expressions
-    libbranch.declare_expr_pf(model=model,
-                              index_set=branches_idx,
-                              )
+    #libbranch.declare_expr_pf(model=model,
+    #                          index_set=branches_idx,
+    #                          )
 
     ## Do and store PTDF calculation
     reference_bus = md.data['system']['reference_bus']
 
-    PTDF = data_utils.get_ptdf_potentially_from_file(ptdf_options, branches_idx, buses_idx)
-    if PTDF is None:
-        PTDF = data_utils.PTDFMatrix(branches, buses, reference_bus, base_point, branches_keys=branches_idx, buses_keys=buses_idx)
-    model._PTDF = PTDF
     model._ptdf_options = ptdf_options
 
-    data_utils.write_ptdf_potentially_to_file(ptdf_options, PTDF)
+    pf_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
+    pf_init = {k: 0 for k in branch_attrs['names']}
+    pf_bounds = dict()
+    for k in branches.keys():
+        if pf_max[k] is None:
+            pf_bounds[k] = (None, None)
+        else:
+            pf_bounds[k] = (-pf_max[k], pf_max[k])
 
     if ptdf_options['lazy']:
 
-        ### add "blank" real power flow limits
-        libbranch.declare_ineq_p_branch_thermal_lbub(model=model,
-                                                     index_set=branches_idx,
-                                                     branches=branches,
-                                                     p_thermal_limits=None,
-                                                     approximation_type=None,
-                                                     )
+        libbranch.declare_var_pf(model=model,
+                                 index_set=branch_attrs['names'],
+                                 bounds=pf_bounds
+                                 )
+        model.eq_pf_branch = pe.Constraint(branch_attrs['names'])
 
         ### add helpers for tracking monitored branches
         lpu.add_monitored_branch_tracker(model)
 
     else:
-        p_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
+        libbranch.declare_var_pf(model=model,
+                                 index_set=branch_attrs['names'],
+                                 initialize=pf_init,
+                                 bounds=pf_bounds
+                                 )
+
         ## add all the constraints
         ### declare the branch power flow approximation constraints
-        libbranch.declare_eq_branch_power_ptdf_approx(model=model,
-                                                      index_set=branches_idx,
-                                                      PTDF=PTDF,
-                                                      abs_ptdf_tol=ptdf_options['abs_ptdf_tol'],
-                                                      rel_ptdf_tol=ptdf_options['rel_ptdf_tol'],
-                                                      )
-
-        ### add all the limits
-        libbranch.declare_ineq_p_branch_thermal_lbub(model=model,
-                                                     index_set=branches_idx,
-                                                     branches=branches,
-                                                     p_thermal_limits=p_max,
-                                                     approximation_type=ApproximationType.PTDF,
-                                                     )
+        libbranch.declare_eq_branch_pf_fdf_approx(model=model,
+                                                  index_set=branches_idx,
+                                                  sensitivity=branch_attrs['ptdf'],
+                                                  constant=branch_attrs['ptdf_c'],
+                                                  abs_ptdf_tol=None,
+                                                  rel_ptdf_tol=None,
+                                                  )
 
     ### declare the generator cost objective
     libgen.declare_expression_pgqg_operating_cost(model=model,
@@ -302,64 +304,6 @@ def create_ptdf_dcopf_model(model_data, include_feasibility_slack=False, base_po
     return model, md
 
 
-def _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic_solver_labels=False, iteration_limit=100000):
-    from pyomo.solvers.plugins.solvers.persistent_solver import PersistentSolver
-
-    PTDF = m._PTDF
-
-    ptdf_options = m._ptdf_options
-
-    rel_flow_tol = ptdf_options['rel_flow_tol']
-    abs_flow_tol = ptdf_options['abs_flow_tol']
-
-    branch_limits = PTDF.branch_limits_array
-
-    ## only enforce the relative and absolute, within tollerance
-    PTDF.enforced_branch_limits = np.maximum(branch_limits*(1+rel_flow_tol), branch_limits+abs_flow_tol)
-
-    persistent_solver = isinstance(solver, PersistentSolver)
-
-    for i in range(iteration_limit):
-
-        PFV, viol_num, mon_viol_num, gt_viol_lazy, lt_viol_lazy = lpu.check_violations(m, md, PTDF, ptdf_options['max_violations_per_iteration'])
-
-        iter_status_str = "iteration {0}, found {1} violation(s)".format(i,viol_num)
-        if mon_viol_num:
-            iter_status_str += ", {} of which are already monitored".format(mon_viol_num)
-
-        print(iter_status_str)
-
-        if viol_num <= 0:
-            ## in this case, there are no violations!
-            ## load the duals now too, if we're using a persistent solver
-            if persistent_solver:
-                solver.load_duals()
-            return lpu.LazyPTDFTerminationCondition.NORMAL
-
-        elif viol_num == mon_viol_num:
-            print('WARNING: Terminating with monitored violations!')
-            print('         Result is not transmission feasible.')
-            if persistent_solver:
-                solver.load_duals()
-            return lpu.LazyPTDFTerminationCondition.FLOW_VIOLATION
-
-        lpu.add_violations(gt_viol_lazy, lt_viol_lazy, PFV, m, md, solver, ptdf_options, PTDF)
-
-        #m.ineq_pf_branch_thermal_lb.pprint()
-        #m.ineq_pf_branch_thermal_ub.pprint()
-
-        if persistent_solver:
-            solver.solve(m, tee=solver_tee, load_solutions=False, save_results=False)
-            solver.load_vars()
-        else:
-            solver.solve(m, tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels)
-
-    else: # we hit the iteration limit
-        print('WARNING: Exiting on maximum iterations for lazy PTDF model.')
-        print('         Result is not transmission feasible.')
-        if persistent_solver:
-            solver.load_duals()
-        return lpu.LazyPTDFTerminationCondition.ITERATION_LIMIT
 
 def solve_dcopf(model_data,
                 solver,
@@ -406,6 +350,8 @@ def solve_dcopf(model_data,
     from egret.common.solver_interface import _solve_model
     from egret.model_library.transmission.tx_utils import \
         scale_ModelData_to_pu, unscale_ModelData_to_pu
+    from egret.model_library.transmission.tx_calc import linsolve_theta_fdf
+    from egret.common.lazy_ptdf_utils import _lazy_model_solve_loop
 
     m, md = dcopf_model_generator(model_data, **kwargs)
 
@@ -416,7 +362,7 @@ def solve_dcopf(model_data,
 
     if dcopf_model_generator == create_ptdf_dcopf_model and m._ptdf_options['lazy']:
         iter_limit = m._ptdf_options['iteration_limit']
-        term_cond = _lazy_ptdf_dcopf_model_solve_loop(m, md, solver, timelimit=timelimit, solver_tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels,iteration_limit=iter_limit)
+        term_cond = _lazy_model_solve_loop(m, md, solver, timelimit=timelimit, solver_tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels,iteration_limit=iter_limit)
 
     if not hasattr(md,'results'):
         md.data['results'] = dict()
@@ -431,6 +377,11 @@ def solve_dcopf(model_data,
     buses = dict(md.elements(element_type='bus'))
     branches = dict(md.elements(element_type='branch'))
 
+    bus_attrs = md.attributes(element_type='bus')
+    branch_attrs = md.attributes(element_type='branch')
+    buses_idx = bus_attrs['names']
+    branches_idx = branch_attrs['names']
+
     md.data['system']['total_cost'] = value(m.obj)
     md.data['system']['ploss'] = 0
     md.data['system']['qloss'] = 0
@@ -438,36 +389,43 @@ def solve_dcopf(model_data,
     for g,g_dict in gens.items():
         g_dict['pg'] = value(m.pg[g])
 
-    ## calculate the power flows from our PTDF matrix for maximum precision
+    ## calculate the power flows by back-solving for theta then use B-theta matrix (Ft)
     ## calculate the LMPC (LMP congestion) using numpy
+    # TODO: should we redo LMPC to use numpy?
     if dcopf_model_generator == create_ptdf_dcopf_model:
-        PTDF = m._PTDF
-        PTDFM = PTDF.PTDFM
-        branches_idx = PTDF.branches_keys
 
-        NWV = np.array([pe.value(m.p_nw[b]) for b in PTDF.bus_iterator()])
-        PFV  = PTDFM.dot(NWV)
-        PFD = np.zeros(len(branches_idx))
-        for i,bn in enumerate(branches_idx):
-            branches[bn]['pf'] = PFV[i]
-            if bn in m.ineq_pf_branch_thermal_lb:
-                PFD[i] += value(m.dual[m.ineq_pf_branch_thermal_lb[bn]])
-            if bn in m.ineq_pf_branch_thermal_ub:
-                PFD[i] += value(m.dual[m.ineq_pf_branch_thermal_ub[bn]])
-        ## TODO: PFD is likely to be sparse, implying we just need a few
-        ##       rows of the PTDF matrix (or columns in its transpose).
-        LMPC = -PTDFM.T.dot(PFD)
+        # back-solve for theta then solve for power flows
+        THETA = linsolve_theta_fdf(m, md)
+        Ft = md.data['system']['Ft']
+        ft_c = md.data['system']['ft_c']
+        PFV = Ft.dot(THETA) + ft_c
+
+        LMPC = np.zeros(len(buses_idx))
+
+        for i,branch_name in enumerate(branches_idx):
+
+            branch = branches[branch_name]
+            branch['pf'] = PFV[i]
+
+            if branch_name in m.eq_pf_branch:
+                PFD = value(m.dual[m.eq_pf_branch[branch_name]])
+                if PFD != 0:
+                    ptdf = branch['ptdf']
+                    for j,bus_name in enumerate(buses_idx):
+                        LMPC[j] += ptdf[bus_name] * PFD
+
+    # otherwise LMP congestion comes direct from bus-balance constraints
     else:
         for k, k_dict in branches.items():
             k_dict['pf'] = value(m.pf[k])
 
     if dcopf_model_generator == create_ptdf_dcopf_model:
-        buses_idx = PTDF.buses_keys
         LMPE = value(m.dual[m.eq_p_balance])
         for i,b in enumerate(buses_idx):
             b_dict = buses[b]
             b_dict['lmp'] = LMPE + LMPC[i]
             b_dict['pl'] = value(m.pl[b])
+            b_dict['va'] = THETA[i]
             b_dict['vm'] = 1.0
     else:
         for b,b_dict in buses.items():

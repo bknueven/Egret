@@ -192,7 +192,7 @@ class PTDFLossesMatrix(PTDFMatrix):
         self._calculate_losses_phase_shift()
 
     def _calculate_ptdf(self):
-        ptdf_r, ldf, ldf_c, ptdf_c = tx_calc.calculate_ptdf_ldf(self._branches, self._buses, self.branches_keys,
+        ptdf_r, ldf, ldf_c, ptdf_c = tx_calc.calculate_ptdf_pldf(self._branches, self._buses, self.branches_keys,
                                                         self.buses_keys, self._reference_bus, self._base_point,
                                                         mapping_bus_to_idx=self._busname_to_index_map)
 

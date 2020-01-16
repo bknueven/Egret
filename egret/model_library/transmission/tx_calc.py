@@ -409,7 +409,8 @@ def _calculate_L11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
             vm = 1.
             tn = 0.
             tm = 0.
-        elif base_point == BasePointType.SOLUTION: # TODO: check that we are loading the correct values (or results)
+
+        elif base_point == BasePointType.SOLUTION:
             vn = buses[from_bus]['vm']
             vm = buses[to_bus]['vm']
             tn = buses[from_bus]['va']
@@ -933,7 +934,12 @@ def calculate_lccm_flow_sensitivies(branches,buses,index_set_branch,index_set_bu
 
     _ref_bus_idx = mapping_bus_to_idx[reference_bus]
 
-    Ft = _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_idx,base_point,approximation_type=ApproximationType.PTDF_LOSSES)
+    if base_point is BasePointType.SOLUTION:
+        approximation_type = ApproximationType.PTDF_LOSSES
+    else:
+        approximation_type = ApproximationType.PTDF
+
+    Ft = _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_idx,base_point,approximation_type)
     Fv = _calculate_J22(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_idx,base_point)
     ft_c = _calculate_pf_constant(branches,buses,index_set_branch,base_point)
     fv_c = _calculate_qf_constant(branches,buses,index_set_branch,base_point)
@@ -1013,14 +1019,33 @@ def linsolve_theta_fdf(model, model_data, base_point=BasePointType.SOLUTION, map
 
     _ref_bus_idx = mapping_bus_to_idx[reference_bus]
 
-    # Rectangular sensitivity matrices
-    J = _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_idx,base_point,approximation_type=ApproximationType.PTDF_LOSSES)
-    L = _calculate_L11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_idx,base_point)
-    Jc = _calculate_pf_constant(branches,buses,index_set_branch,base_point)
-    Lc = _calculate_pfl_constant(branches,buses,index_set_branch,base_point)
+    if base_point is BasePointType.SOLUTION:
+        approximation_type = ApproximationType.PTDF_LOSSES
+    else:
+        approximation_type = ApproximationType.PTDF
 
-    if np.all(Jc == 0) and np.all(Lc == 0):
-        return np.zeros((_len_branch, _len_bus)), np.zeros((_len_branch, _len_bus)), np.zeros((1,_len_branch))
+    # Nodal net withdrawal to a Numpy array
+    m_p_nw = np.zeros(_len_bus)
+    for b, bus in buses.items():
+        idx = mapping_bus_to_idx[b]
+        m_p_nw[idx] = value(model.p_nw[b])
+
+    if 'va_SENSI' in md.data['system']:
+
+        print('solving theta with precomputed inverse.')
+
+        Z = md.data['system']['va_SENSI']
+        c = md.data['system']['va_CONST']
+
+        theta = Z.dot(m_p_nw) + c
+
+        return theta
+
+    # Rectangular sensitivity matrices
+    J = md.data['system']['Ft']
+    L = md.data['system']['Lt']
+    Jc = md.data['system']['ft_c']
+    Lc = md.data['system']['lt_c']
 
     A = calculate_adjacency_matrix_transpose(branches,index_set_branch,index_set_bus, mapping_bus_to_idx)
     AA = calculate_absolute_adjacency_matrix(A)
@@ -1035,27 +1060,98 @@ def linsolve_theta_fdf(model, model_data, base_point=BasePointType.SOLUTION, map
     m2 = AA @ Lc
     m = m1 + 0.5 * m2
 
-    # Nodal net withdrawal to a Numpy array
-    m_p_nw = np.zeros(_len_bus)
-    for b, bus in buses.items():
-        idx = mapping_bus_to_idx[b]
-        m_p_nw[idx] = value(model.p_nw[b])
-
     # aggregate constants to solve M*theta = b
     b = -m - m_p_nw
 
     # Adjust reference bus coefficients to make M full rank and fix reference bus angle
     ref = mapping_bus_to_idx[reference_bus]
-    M = M.toarray()
+    #M = M.toarray()
     M[ref,:] = 0
     M[ref,ref] = 1
     b[ref] = 0
 
     # Solve linear system
-    theta = np.linalg.solve(M, b)
+    theta = sp.sparse.linalg.spsolve(M, b)
 
     return theta
 
+def linsolve_vmag_fdf(model, model_data, base_point=BasePointType.SOLUTION, mapping_bus_to_idx=None):
+    '''
+    Finds the implied voltage angles from an FDF model solution
+
+    Since sensitivity matrices are recalculated, this MUST be done BEFORE saving model solution to model_data!
+    '''
+
+    from pyomo.environ import value
+
+    md = model_data.clone_in_service()
+    buses = dict(md.elements(element_type='bus'))
+    branches = dict(md.elements(element_type='branch'))
+
+    bus_attrs = md.attributes(element_type='bus')
+    branch_attrs = md.attributes(element_type='branch')
+
+    index_set_bus = bus_attrs['names']
+    index_set_branch = branch_attrs['names']
+
+    reference_bus = md.data['system']['reference_bus']
+
+    _len_bus = len(index_set_bus)
+    _len_branch = len(index_set_branch)
+
+    if mapping_bus_to_idx is None:
+        mapping_bus_to_idx = {bus_n: i for i, bus_n in enumerate(index_set_bus)}
+
+    _ref_bus_idx = mapping_bus_to_idx[reference_bus]
+
+    if base_point is BasePointType.SOLUTION:
+        approximation_type = ApproximationType.PTDF_LOSSES
+    else:
+        approximation_type = ApproximationType.PTDF
+
+    # Nodal net withdrawal to a Numpy array
+    m_q_nw = np.zeros(_len_bus)
+    for b, bus in buses.items():
+        idx = mapping_bus_to_idx[b]
+        m_q_nw[idx] = value(model.q_nw[b])
+
+    if 'vm_SENSI' in md.data['system']:
+
+        print('solving vmag with precomputed inverse.')
+
+        Z = md.data['system']['vm_SENSI']
+        c = md.data['system']['vm_CONST']
+
+        vmag = Z.dot(m_q_nw) + c
+
+        return vmag
+
+    # Rectangular sensitivity matrices
+    J = md.data['system']['Fv']
+    L = md.data['system']['Lv']
+    Jc = md.data['system']['fv_c']
+    Lc = md.data['system']['lv_c']
+
+    A = calculate_adjacency_matrix_transpose(branches,index_set_branch,index_set_bus, mapping_bus_to_idx)
+    AA = calculate_absolute_adjacency_matrix(A)
+
+    # Nodal power transfer matrix (square)
+    M1 = A @ J
+    M2 = AA @ L
+    M = M1 + 0.5 * M2
+
+    # Transfer matrix linearization constant (vector)
+    m1 = A @ Jc
+    m2 = AA @ Lc
+    m = m1 + 0.5 * m2
+
+    # aggregate constants to solve M*theta = b
+    b = -m - m_q_nw
+
+    # Solve linear system
+    vmag = sp.sparse.linalg.spsolve(M, b)
+
+    return vmag
 
 def calculate_ptdf_pldf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.SOLUTION,sparse_index_set_branch=None,mapping_bus_to_idx=None):
     """
@@ -1099,9 +1195,6 @@ def calculate_ptdf_pldf(branches,buses,index_set_branch,index_set_bus,reference_
     Jc = _calculate_pf_constant(branches,buses,index_set_branch,base_point)
     Lc = _calculate_pfl_constant(branches,buses,index_set_branch,base_point)
 
-    if np.all(Jc == 0) and np.all(Lc == 0):
-        return np.zeros((_len_branch, _len_bus)), np.zeros((_len_branch, _len_bus)), np.zeros((1,_len_branch))
-
     A = calculate_adjacency_matrix_transpose(branches,index_set_branch,index_set_bus, mapping_bus_to_idx)
     AA = calculate_absolute_adjacency_matrix(A)
     M1 = A@J
@@ -1130,6 +1223,7 @@ def calculate_ptdf_pldf(branches,buses,index_set_branch,index_set_bus,reference_
             pass
         SENSI = SENSI[:-1,:-1]
 
+        VA_SENSI = -SENSI
         PTDF = np.matmul(-J.A, SENSI)
         PLDF = np.matmul(-L.A, SENSI)
     elif len(sparse_index_set_branch) < _len_branch: #TODO: the steps below aren't clear and need comments to decirbe what is happening
@@ -1164,12 +1258,13 @@ def calculate_ptdf_pldf(branches,buses,index_set_branch,index_set_bus,reference_
     M = M1 + 0.5 * M2
     PT_constant = PTDF@M + Jc
     PL_constant = PLDF@M + Lc
+    VA_CONST = VA_SENSI@M
 
-    return PTDF, PT_constant, PLDF, PL_constant
+    return PTDF, PT_constant, PLDF, PL_constant, VA_SENSI, VA_CONST
 
 # change sparse_index_set_branch --> active_index_set_branch
 # change sparse_index_set_bus --> active_index_set_bus
-def calculate_qtdf_qldf_vdf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.SOLUTION,sparse_index_set_branch=None,sparse_index_set_bus=None,mapping_bus_to_idx=None):
+def calculate_qtdf_qldf(branches,buses,index_set_branch,index_set_bus,reference_bus,base_point=BasePointType.SOLUTION,sparse_index_set_branch=None,sparse_index_set_bus=None,mapping_bus_to_idx=None):
     """
     Calculates the sensitivity of the voltage magnitude to the reactive power injections and losses on the lines. Includes the
     calculation of the constant term for the quadratic losses on the lines.
@@ -1206,7 +1301,6 @@ def calculate_qtdf_qldf_vdf(branches,buses,index_set_branch,index_set_bus,refere
     L = _calculate_L22(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_idx,base_point)
     Jc = _calculate_qf_constant(branches,buses,index_set_branch,base_point)
     Lc = _calculate_qfl_constant(branches,buses,index_set_branch,base_point)
-    #Lc = Lc*1.04
 
     if np.all(Jc == 0) and np.all(Lc == 0):
         return np.zeros((_len_branch, _len_bus)), np.zeros((_len_branch, _len_bus)), np.zeros((1,_len_branch))
@@ -1228,7 +1322,7 @@ def calculate_qtdf_qldf_vdf(branches,buses,index_set_branch,index_set_bus,refere
             print("Matrix not invertible. Calculating pseudo-inverse instead.")
             SENSI = np.linalg.pinv(M.A,rcond=1e-7)
             pass
-        VDF = -SENSI
+        VM_SENSI = -SENSI
         QTDF = np.matmul(-J.A, SENSI)
         QLDF = np.matmul(-L.A, SENSI)
     elif len(sparse_index_set_branch) < _len_branch or len(sparse_index_set_bus) < _len_bus:
@@ -1275,7 +1369,7 @@ def calculate_qtdf_qldf_vdf(branches,buses,index_set_branch,index_set_bus,refere
     M = M1 + 0.5 * M2
     QTDF_constant = QTDF@M + Jc
     QLDF_constant = QLDF@M + Lc
-    VDF_constant = VDF@M
+    VM_CONST = VM_SENSI@M
 
     #VDFc1 = VDF@M1
     #VDFc2 = VDF@(0.5*M2)
@@ -1284,7 +1378,7 @@ def calculate_qtdf_qldf_vdf(branches,buses,index_set_branch,index_set_bus,refere
     #show_me.update({'c2' : VDFc2})
     #print(pd.DataFrame(show_me))
 
-    return QTDF, QTDF_constant, QLDF, QLDF_constant, VDF, VDF_constant
+    return QTDF, QTDF_constant, QLDF, QLDF_constant, VM_SENSI, VM_CONST
 
 
 def calculate_adjacency_matrix_transpose(branches,index_set_branch,index_set_bus, mapping_bus_to_idx):

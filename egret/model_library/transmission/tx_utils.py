@@ -316,6 +316,8 @@ scaled_attributes = {
                        ('system_attributes', None ) : [
                                                         'load_mismatch_cost',
                                                         'reserve_shortfall_cost',
+                                                        'ploss',
+                                                        'qloss',
                                                      ] + \
                                                      ancillary_service_stack,
                    }

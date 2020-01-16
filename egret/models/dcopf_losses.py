@@ -22,6 +22,7 @@ import egret.model_library.transmission.tx_calc as tx_calc
 import egret.model_library.transmission.bus as libbus
 import egret.model_library.transmission.branch as libbranch
 import egret.model_library.transmission.gen as libgen
+import egret.data.data_utils_deprecated as data_utils_deprecated
 
 import egret.data.data_utils as data_utils
 import egret.common.lazy_ptdf_utils as lpu
@@ -186,6 +187,7 @@ def create_btheta_losses_dcopf_model(model_data, relaxation_type=RelaxationType.
 
 
 def create_ptdf_losses_dcopf_model(model_data, include_feasibility_slack=False, ptdf_options=None):
+
     if ptdf_options is None:
         ptdf_options = dict()
 
@@ -196,6 +198,10 @@ def create_ptdf_losses_dcopf_model(model_data, include_feasibility_slack=False, 
 
     md = model_data.clone_in_service()
     tx_utils.scale_ModelData_to_pu(md, inplace = True)
+
+    ## We'll assume we have a solution to initialize from
+    base_point = BasePointType.SOLUTION
+    data_utils_deprecated.create_dicts_of_ptdf_losses(md, base_point)
 
     gens = dict(md.elements(element_type='generator'))
     buses = dict(md.elements(element_type='bus'))
@@ -208,12 +214,15 @@ def create_ptdf_losses_dcopf_model(model_data, include_feasibility_slack=False, 
     branch_attrs = md.attributes(element_type='branch')
     load_attrs = md.attributes(element_type='load')
     shunt_attrs = md.attributes(element_type='shunt')
+    system_attrs = md.data['system']
 
     inlet_branches_by_bus, outlet_branches_by_bus = \
         tx_utils.inlet_outlet_branches_by_bus(branches, buses)
     gens_by_bus = tx_utils.gens_by_bus(buses, gens)
 
     model = pe.ConcreteModel()
+
+    model._ptdf_options = ptdf_options
 
     ### declare (and fix) the loads at the buses
     bus_p_loads, _ = tx_utils.dict_of_bus_loads(buses, loads)
@@ -236,70 +245,86 @@ def create_ptdf_losses_dcopf_model(model_data, include_feasibility_slack=False, 
         p_rhs_kwargs, penalty_expr = _include_system_feasibility_slack(model, gen_attrs, bus_p_loads)
 
     ### declare net withdraw expression for use in PTDF power flows
-    libbus.declare_expr_p_net_withdraw_at_bus(model=model,
-                                              index_set=bus_attrs['names'],
-                                              bus_p_loads=bus_p_loads,
-                                              gens_by_bus=gens_by_bus,
-                                              bus_gs_fixed_shunts=bus_gs_fixed_shunts,
-                                              )
+    p_net_withdrawal_init = {k: 0 for k in bus_attrs['names']}
+    libbus.declare_var_p_nw(model, bus_attrs['names'], initialize=p_net_withdrawal_init)
+    libbus.declare_eq_p_net_withdraw_fdf(model, bus_attrs['names'], buses, bus_p_loads, gens_by_bus,
+                                         bus_gs_fixed_shunts)
 
     ### declare the current flows in the branches
     p_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
     pfl_bounds = {k: (-p_max[k]**2,p_max[k]**2) for k in branches.keys()}
     pfl_init = {k: 0 for k in branches.keys()}
 
-    ## Do and store PTDF calculation
-    reference_bus = md.data['system']['reference_bus']
-    ## We'll assume we have a solution to initialize from
-    base_point = BasePointType.SOLUTION
+    s_max = {k: branches[k]['rating_long_term'] for k in branches.keys()}
+    s_lbub = dict()
+    for k in branches.keys():
+        if s_max[k] is None:
+            s_lbub[k] = (None, None)
+        else:
+            s_lbub[k] = (-s_max[k], s_max[k])
+    pf_bounds = s_lbub
 
-    PTDF = data_utils.PTDFLossesMatrix(branches, buses, reference_bus, base_point)
-    model._PTDF = PTDF
-    model._ptdf_options = ptdf_options
+    #ploss_init = {'system' : sum(branches[idx]['pf'] + branches[idx]['pt'] for idx in list(range(0, _len_branch))) }
+    ploss_init = 0
 
-    libbranch.declare_expr_pf(model=model,
-                             index_set=branch_attrs['names'],
-                             )
 
-    libbranch.declare_var_pfl(model=model,
-                              index_set=branch_attrs['names'],
-                              initialize=pfl_init,
-                              bounds=pfl_bounds
-                             )
+    ### declare the branch power flow variables and approximation constraints
+    if ptdf_options['lazy']:
 
-    ### declare the branch power flow approximation constraints
-    libbranch.declare_eq_branch_power_ptdf_approx(model=model,
+        libbranch.declare_var_pf(model=model,
+                                 index_set=branch_attrs['names'],
+                                 bounds=pf_bounds
+                                 )
+        model.eq_pf_branch = pe.Constraint(branch_attrs['names'])
+
+        ### add helpers for tracking monitored branches
+        lpu.add_monitored_branch_tracker(model)
+
+    else:
+
+        libbranch.declare_var_pf(model=model,
+                                 index_set=branch_attrs['names'],
+                                 bounds=pf_bounds
+                                 )
+        libbranch.declare_eq_branch_pf_fdf_approx(model=model,
                                                   index_set=branch_attrs['names'],
-                                                  PTDF=PTDF,
-                                                  abs_ptdf_tol=ptdf_options['abs_ptdf_tol'],
-                                                  rel_ptdf_tol=ptdf_options['rel_ptdf_tol'],
+                                                  sensitivity=branch_attrs['ptdf'],
+                                                  constant=branch_attrs['ptdf_c'],
+                                                  rel_tol=None,
+                                                  abs_tol=None
                                                   )
 
-    ### declare the branch power loss approximation constraints
-    libbranch.declare_eq_branch_loss_ptdf_approx(model=model,
-                                                 index_set=branch_attrs['names'],
-                                                 PTDF=PTDF,
-                                                 abs_ptdf_tol=ptdf_options['abs_ptdf_tol'],
-                                                 rel_ptdf_tol=ptdf_options['rel_ptdf_tol'],
-                                                 )
+
+
+    ### declare the branch power loss variables and approximation constraints
+    libbranch.declare_var_ploss(model=model,
+                              initialize=ploss_init) #,
+                              #bounds=ploss_bounds
+                              #)
+    libbranch.declare_eq_ploss_fdf_simplified(model=model,
+                                              sensitivity=bus_attrs['ploss_sens'],
+                                              constant=system_attrs['ploss_const'],
+                                              rel_tol=None,
+                                              abs_tol=None
+                                              )
 
     ### declare the p balance
-    libbus.declare_eq_p_balance_ed(model=model,
-                                   index_set=bus_attrs['names'],
-                                   bus_p_loads=bus_p_loads,
-                                   gens_by_bus=gens_by_bus,
-                                   bus_gs_fixed_shunts=bus_gs_fixed_shunts,
-                                   include_losses=branch_attrs['names'],
-                                   **p_rhs_kwargs
-                                   )
+    libbus.declare_eq_p_balance_fdf_simplified(model=model,
+                                    index_set=bus_attrs['names'],
+                                    buses=buses,
+                                    bus_p_loads=bus_p_loads,
+                                    gens_by_bus=gens_by_bus,
+                                    bus_gs_fixed_shunts=bus_gs_fixed_shunts,
+                                    **p_rhs_kwargs
+                                    )
 
     ### declare the real power flow limits
-    libbranch.declare_ineq_p_branch_thermal_lbub(model=model,
-                                                 index_set=branch_attrs['names'],
-                                                 branches=branches,
-                                                 p_thermal_limits=p_max,
-                                                 approximation_type=ApproximationType.PTDF
-                                                 )
+    #libbranch.declare_ineq_p_branch_thermal_lbub(model=model,
+    #                                             index_set=branch_attrs['names'],
+    #                                             branches=branches,
+    #                                             p_thermal_limits=p_max,
+    #                                             approximation_type=ApproximationType.PTDF
+    #                                             )
 
     ### declare the generator cost objective
     libgen.declare_expression_pgqg_operating_cost(model=model,
@@ -355,10 +380,13 @@ def solve_dcopf_losses(model_data,
     '''
 
     import pyomo.environ as pe
+    import numpy as np
     from pyomo.environ import value
     from egret.common.solver_interface import _solve_model
     from egret.model_library.transmission.tx_utils import \
         scale_ModelData_to_pu, unscale_ModelData_to_pu
+    from egret.common.lazy_ptdf_utils import _lazy_model_solve_loop
+    from egret.model_library.transmission.tx_calc import linsolve_theta_fdf
 
     m, md = dcopf_losses_model_generator(model_data, **kwargs)
 
@@ -366,6 +394,12 @@ def solve_dcopf_losses(model_data,
 
     m, results, solver = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
                               symbolic_solver_labels=symbolic_solver_labels,options=options, return_solver=True)
+
+
+    if dcopf_losses_model_generator == create_ptdf_losses_dcopf_model and m._ptdf_options['lazy']:
+        iter_limit = m._ptdf_options['iteration_limit']
+        term_cond = _lazy_model_solve_loop(m, md, solver, timelimit=timelimit, solver_tee=solver_tee, symbolic_solver_labels=symbolic_solver_labels,iteration_limit=iter_limit)
+
 
     if not hasattr(md,'results'):
         md.data['results'] = dict()
@@ -380,6 +414,11 @@ def solve_dcopf_losses(model_data,
     buses = dict(md.elements(element_type='bus'))
     branches = dict(md.elements(element_type='branch'))
 
+    bus_attrs = md.attributes(element_type='bus')
+    branch_attrs = md.attributes(element_type='branch')
+    buses_idx = bus_attrs['names']
+    branches_idx = branch_attrs['names']
+
     md.data['system']['total_cost'] = value(m.obj)
 
     for g,g_dict in gens.items():
@@ -391,29 +430,50 @@ def solve_dcopf_losses(model_data,
             b_dict.pop('qlmp',None)
             b_dict['lmp'] = value(m.dual[m.eq_p_balance[b]])
             b_dict['va'] = value(m.va[b])
+            b_dict['vm'] = 1.0
+
+        for k, k_dict in branches.items():
+            k_dict['pf'] = value(m.pf[k])
+            k_dict['pf_dual'] = value(m.dual[m.eq_pf_branch[k]])
+
+
     elif dcopf_losses_model_generator == create_ptdf_losses_dcopf_model:
-        PTDF = m._PTDF
-        ptdf_r = PTDF.PTDFM
-        ldf = PTDF.LDF
-        buses_idx = PTDF.buses_keys
-        branches_idx = PTDF.branches_keys
 
-        for j, b in enumerate(buses_idx):
+        # back-solve for theta then solve for power flows
+        THETA = linsolve_theta_fdf(m, md)
+        Ft = md.data['system']['Ft']
+        ft_c = md.data['system']['ft_c']
+        PFV = Ft.dot(THETA) + ft_c
+
+        LMPE = value(m.dual[m.eq_p_balance])
+        LMPL = np.zeros(len(buses_idx))
+        LMPC = np.zeros(len(buses_idx))
+
+        for i,branch_name in enumerate(branches_idx):
+
+            branch = branches[branch_name]
+            branch['pf'] = PFV[i]
+
+            if branch_name in m.eq_pf_branch:
+                PFD = value(m.dual[m.eq_pf_branch[branch_name]])
+                branch['pf_dual'] = PFD
+                if PFD != 0:
+                    ptdf = branch['ptdf']
+                    for j,bus_name in enumerate(buses_idx):
+                        LMPC[j] += ptdf[bus_name] * PFD
+
+        for i,b in enumerate(buses_idx):
+            PLD = value(m.dual[m.eq_ploss])
             b_dict = buses[b]
+            LMPL[i] = PLD * b_dict['ploss_sens']
+            b_dict['lmp'] = LMPE + LMPL[i] + LMPC[i]
             b_dict['pl'] = value(m.pl[b])
-            b_dict.pop('qlmp',None)
-
-            b_dict['lmp'] = value(m.dual[m.eq_p_balance])
-            for i, k in enumerate(branches_idx):
-                b_dict['lmp'] += ptdf_r[i,j]*value(m.dual[m.ineq_pf_branch_thermal_lb[k]])
-                b_dict['lmp'] += ptdf_r[i,j]*value(m.dual[m.ineq_pf_branch_thermal_ub[k]])
-                b_dict['lmp'] += ldf[i,j]*value(m.dual[m.eq_pfl_branch[k]])
+            b_dict['va'] = THETA[i]
+            b_dict['vm'] = 1.0
 
     else:
         raise Exception("Unrecognized dcopf_losses_model_generator {}".format(dcopf_losses_model_generator))
 
-    for k, k_dict in branches.items():
-        k_dict['pf'] = value(m.pf[k])
 
     unscale_ModelData_to_pu(md, inplace=True)
 
