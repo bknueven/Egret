@@ -229,8 +229,8 @@ def create_simplified_fdf_model(model_data, include_feasibility_slack=False, inc
     if ptdf_options['lazy']:
 
         for branch_name, branch in branches.items():
-            pf_init[branch_name] = 0
-            qf_init[branch_name] = 0
+            pf_init[branch_name] = (branch['pf'] - branch['pt']) / 2
+            qf_init[branch_name] = (branch['qf'] - branch['qt']) / 2
 
         libbranch.declare_var_pf(model=model,
                                  index_set=branch_attrs['names'],
@@ -273,16 +273,16 @@ def create_simplified_fdf_model(model_data, include_feasibility_slack=False, inc
                                                   index_set=branch_attrs['names'],
                                                   sensitivity=branch_attrs['ptdf'],
                                                   constant=branch_attrs['ptdf_c'],
-                                                  rel_tol=None,
-                                                  abs_tol=None
+                                                  rel_tol=ptdf_options['rel_ptdf_tol'],
+                                                  abs_tol=ptdf_options['abs_ptdf_tol'],
                                                   )
 
         libbranch.declare_eq_branch_qf_fdf_approx(model=model,
                                                   index_set=branch_attrs['names'],
                                                   sensitivity=branch_attrs['qtdf'],
                                                   constant=branch_attrs['qtdf_c'],
-                                                  rel_tol=None,
-                                                  abs_tol=None
+                                                  rel_tol=ptdf_options['rel_ptdf_tol'],
+                                                  abs_tol=ptdf_options['abs_ptdf_tol'],
                                                   )
 
         libbranch.declare_fdf_thermal_limit(model=model,
@@ -317,8 +317,8 @@ def create_simplified_fdf_model(model_data, include_feasibility_slack=False, inc
                                         index_set=bus_attrs['names'],
                                         sensitivity=bus_attrs['vdf'],
                                         constant=bus_attrs['vdf_c'],
-                                        rel_tol=None,
-                                        abs_tol=None
+                                        rel_tol=ptdf_options['rel_ptdf_tol'],
+                                        abs_tol=ptdf_options['abs_ptdf_tol'],
                                         )
 
 
@@ -334,15 +334,15 @@ def create_simplified_fdf_model(model_data, include_feasibility_slack=False, inc
     libbranch.declare_eq_ploss_fdf_simplified(model=model,
                                            sensitivity=bus_attrs['ploss_sens'],
                                            constant=system_attrs['ploss_const'],
-                                           rel_tol=None,
-                                           abs_tol=None
+                                           rel_tol=ptdf_options['rel_ptdf_tol'],
+                                           abs_tol=ptdf_options['abs_ptdf_tol'],
                                            )
 
     libbranch.declare_eq_qloss_fdf_simplified(model=model,
                                            sensitivity=bus_attrs['qloss_sens'],
                                            constant=system_attrs['qloss_const'],
-                                           rel_tol=None,
-                                           abs_tol=None
+                                           rel_tol=ptdf_options['rel_ptdf_tol'],
+                                           abs_tol=ptdf_options['abs_ptdf_tol'],
                                            )
 
 

@@ -14,9 +14,8 @@ typically used for buses (including loads and shunts)
 import pyomo.environ as pe
 import egret.model_library.decl as decl
 from egret.model_library.defn import CoordinateType, ApproximationType
+from egret.model_library.transmission.branch import _get_df_expr
 from math import tan,  radians
-from pyomo.core.util import quicksum
-from pyomo.core.expr.numeric_expr import LinearExpression
 
 def declare_var_vr(model, index_set, **kwargs):
     """
@@ -636,34 +635,7 @@ def get_vm_expr_vdf_approx(model, bus_name, vdf, vdf_c, rel_tol=None, abs_tol=No
     """
     Create a pyomo power flow expression from VDF matrix (voltage magnitudes)
     """
-
-    if rel_tol is None:
-        rel_tol = 0.
-    if abs_tol is None:
-        abs_tol = 0.
-
-    max_coef = 1
-    vdf_tol = max(abs_tol, rel_tol*max_coef)
-    ## NOTE: It would be easy to hold on to the 'ptdf' dictionary here,
-    ##       if we wanted to
-    m_q_nw = model.q_nw
-    ## if model.q_nw is Var, we can use LinearExpression
-    ## to build these dense constraints much faster
-    if isinstance(m_q_nw, pe.Var):
-        coef_list = list()
-        var_list = list()
-        #for bus_name, coef in PTDF.get_branch_ptdf_iterator(branch_name):
-        for bus_name, coef in vdf.items():
-            if abs(coef) >= vdf_tol:
-                coef_list.append(coef)
-                var_list.append(m_q_nw[bus_name])
-
-        lin_expr_list = [vdf_c] + coef_list + var_list
-        expr = LinearExpression(lin_expr_list)
-    else:
-        expr = quicksum( (coef*m_q_nw[bus_name] for bus_name, coef in vdf.items() if abs(coef) >= vdf_tol), start=vdf_c, linear=True)
-
-    return expr
+    return _get_df_expr(model.q_nw, vdf, vdf_c, rel_tol, abs_tol)
 
 def declare_eq_vm_vdf_approx(model, index_set, sensitivity, constant, rel_tol=None, abs_tol=None):
     """

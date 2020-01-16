@@ -388,40 +388,48 @@ def declare_eq_branch_loss_btheta_approx(model, index_set, branches, relaxation_
                 m.pfl[branch_name] >= \
                 g * (m.dva[branch_name])**2
 
-def get_expr_branch_pf_fdf_approx(model, branch_name, ptdf, ptdf_c, rel_tol=None, abs_tol=None):
+def _get_df_expr( var, coefs, const, rel_tol, abs_tol ):
     """
-    Create a pyomo power flow expression from PTDF matrix
+    create a general sensitivity linear expression
+
+    var -- pyomo IndexedVar
+    coefs -- dictionary of coefs, keys are same a indexed var
+    const -- expression constant
+    rel_tol -- relative sensitivity tolerance
+    abs_tol -- absolution sensitivity tolerance
     """
+    if not isinstance(var, pe.Var):
+        raise Exception("Sensitivity constraints must be simple linear constraints of variables and coefficients")
 
     if rel_tol is None:
         rel_tol = 0.
     if abs_tol is None:
         abs_tol = 0.
 
-    #const = PTDF.get_branch_phase_shift(branch_name) + PTDF.get_branch_phi_adj(branch_name)
-    #max_coef = PTDF.get_branch_ptdf_abs_max(branch_name)
-    max_coef = 1
-    ptdf_tol = max(abs_tol, rel_tol*max_coef)
-    ## NOTE: It would be easy to hold on to the 'ptdf' dictionary here,
-    ##       if we wanted to
-    m_p_nw = model.p_nw
-    ## if model.p_nw is Var, we can use LinearExpression
-    ## to build these dense constraints much faster
-    if isinstance(m_p_nw, pe.Var):
-        coef_list = list()
-        var_list = list()
-        #for bus_name, coef in PTDF.get_branch_ptdf_iterator(branch_name):
-        for bus_name, coef in ptdf.items():
-            if abs(coef) >= ptdf_tol:
-                coef_list.append(coef)
-                var_list.append(m_p_nw[bus_name])
-
-        lin_expr_list = [ptdf_c] + coef_list + var_list
-        expr = LinearExpression(lin_expr_list)
+    if rel_tol > 0:
+        max_coef = max(abs(coef) for coef in coefs.values())
+        sensi_tol = max(abs_tol, rel_tol*max_coef)
     else:
-        expr = quicksum( (coef*m_p_nw[bus_name] for bus_name, coef in ptdf.items() if abs(coef) >= ptdf_tol), start=ptdf_c, linear=True)
+        sensi_tol = abs_tol
 
-    return expr
+    coef_list = list()
+    var_list = list()
+    for idx, coef in coefs.items():
+        if abs(coef) < sensi_tol:
+            ## add to the constant the value currently in var
+            ## TODO: should this **always** be the initialization value??
+            const += coef*value(var[idx])
+        else:
+            coef_list.append(coef)
+            var_list.append(var[idx])
+
+    return LinearExpression(constant=const, linear_coefs=coef_list, linear_vars=var_list)
+
+def get_expr_branch_pf_fdf_approx(model, branch_name, ptdf, ptdf_c, rel_tol=None, abs_tol=None):
+    """
+    Create a pyomo power flow expression from PTDF matrix
+    """
+    return _get_df_expr(model.p_nw, ptdf, ptdf_c, rel_tol, abs_tol)
 
 def declare_eq_branch_pf_fdf_approx(model, index_set, sensitivity, constant, rel_tol=None, abs_tol=None):
     """
@@ -457,33 +465,7 @@ def get_expr_branch_pfl_fdf_approx(model, branch_name, pldf, pldf_c, rel_tol=Non
     """
     Create a pyomo power flow loss expression from PTDF matrix
     """
-    if rel_tol is None:
-        rel_tol = 0.
-    if abs_tol is None:
-        abs_tol = 0.
-
-    #max_coef = PTDF.get_branch_ldf_abs_max(branch_name)
-    max_coef = 1
-    pldf_tol = max(abs_tol, rel_tol*max_coef)
-    ## NOTE: It would be easy to hold on to the 'ptdf' dictionary here,
-    ##       if we wanted to
-    m_p_nw = model.p_nw
-    ## if model.p_nw is Var, we can use LinearExpression
-    ## to build these dense constraints much faster
-    if isinstance(m_p_nw, pe.Var):
-        coef_list = list()
-        var_list = list()
-        for bus_name, coef in pldf.items():
-            if abs(coef) >= pldf_tol:
-                coef_list.append(coef)
-                var_list.append(m_p_nw[bus_name])
-
-        lin_expr_list = [pldf_c] + coef_list + var_list
-        expr = LinearExpression(lin_expr_list)
-    else:
-        expr = quicksum( (coef*m_p_nw[bus_name] for bus_name, coef in pldf.items() if abs(coef) >= pldf_tol), start=pldf_c, linear=True)
-
-    return expr
+    return _get_df_expr( model.p_nw, pldf, pldf_c, rel_tol, abs_tol )
 
 def declare_eq_branch_pfl_fdf_approx(model, index_set, sensitivity, constant, rel_tol=None, abs_tol=None):
     """
@@ -516,36 +498,7 @@ def get_expr_branch_qf_fdf_approx(model, branch_name, qtdf, qtdf_c, rel_tol=None
     """
     Create a pyomo power flow expression from QTDF matrix (reactive power flows)
     """
-
-    if rel_tol is None:
-        rel_tol = 0.
-    if abs_tol is None:
-        abs_tol = 0.
-
-    #const = QTDF.get_branch_phase_shift(branch_name) + QTDF.get_branch_phi_adj(branch_name)
-    #max_coef = QTDF.get_branch_ptdf_abs_max(branch_name)
-    max_coef = 1
-    qtdf_tol = max(abs_tol, rel_tol*max_coef)
-    ## NOTE: It would be easy to hold on to the 'ptdf' dictionary here,
-    ##       if we wanted to
-    m_q_nw = model.q_nw
-    ## if model.q_nw is Var, we can use LinearExpression
-    ## to build these dense constraints much faster
-    if isinstance(m_q_nw, pe.Var):
-        coef_list = list()
-        var_list = list()
-        #for bus_name, coef in PTDF.get_branch_ptdf_iterator(branch_name):
-        for bus_name, coef in qtdf.items():
-            if abs(coef) >= qtdf_tol:
-                coef_list.append(coef)
-                var_list.append(m_q_nw[bus_name])
-
-        lin_expr_list = [qtdf_c] + coef_list + var_list
-        expr = LinearExpression(lin_expr_list)
-    else:
-        expr = quicksum( (coef*m_q_nw[bus_name] for bus_name, coef in qtdf.items() if abs(coef) >= qtdf_tol), start=qtdf_c, linear=True)
-
-    return expr
+    return _get_df_expr(model.q_nw, qtdf, qtdf_c, rel_tol, abs_tol)
 
 def declare_eq_branch_qf_fdf_approx(model, index_set, sensitivity, constant, rel_tol=None, abs_tol=None):
     """
@@ -581,33 +534,7 @@ def get_expr_branch_qfl_fdf_approx(model, branch_name, qldf, qldf_c, rel_tol=Non
     """
     Create a pyomo power flow loss expression from QLDF matrix
     """
-    if rel_tol is None:
-        rel_tol = 0.
-    if abs_tol is None:
-        abs_tol = 0.
-
-    #max_coef = QTDF.get_branch_ldf_abs_max(branch_name)
-    max_coef = 1
-    qldf_tol = max(abs_tol, rel_tol*max_coef)
-    ## NOTE: It would be easy to hold on to the 'qldf' dictionary here,
-    ##       if we wanted to
-    m_q_nw = model.q_nw
-    ## if model.q_nw is Var, we can use LinearExpression
-    ## to build these dense constraints much faster
-    if isinstance(m_q_nw, pe.Var):
-        coef_list = list()
-        var_list = list()
-        for bus_name, coef in qldf.items():
-            if abs(coef) >= qldf_tol:
-                coef_list.append(coef)
-                var_list.append(m_q_nw[bus_name])
-
-        lin_expr_list = [qldf_c] + coef_list + var_list
-        expr = LinearExpression(lin_expr_list)
-    else:
-        expr = quicksum( (coef*m_q_nw[bus_name] for bus_name, coef in qldf.items() if abs(coef) >= qldf_tol), start=qldf_c, linear=True)
-
-    return expr
+    return _get_df_expr( model.q_nw, qldf, qldf_c, rel_tol, abs_tol )
 
 def declare_eq_branch_qfl_fdf_approx(model, index_set, sensitivity, constant, rel_tol=None, abs_tol=None):
     """
@@ -640,33 +567,7 @@ def get_expr_branch_pf_lccm_approx(model, branch_name, pf_sens, pf_const, rel_to
     """
     Create a pyomo power flow expression from CCM sensitivity
     """
-
-    if rel_tol is None:
-        rel_tol = 0.
-    if abs_tol is None:
-        abs_tol = 0.
-
-    max_coef = 1
-    sens_tol = max(abs_tol, rel_tol*max_coef)
-    ## NOTE: It would be easy to hold on to the 'ptdf' dictionary here,
-    ##       if we wanted to
-    m_va = model.va
-    ## if model.va is Var, we can use LinearExpression
-    ## LinearExpression may not have advantage for sparse LCCM constraints, but will be implemented analogously to FDF
-    if isinstance(m_va, pe.Var):
-        coef_list = list()
-        var_list = list()
-        for bus_name, coef in pf_sens.items():
-            if abs(coef) >= sens_tol:
-                coef_list.append(coef)
-                var_list.append(m_va[bus_name])
-
-        lin_expr_list = [pf_const] + coef_list + var_list
-        expr = LinearExpression(lin_expr_list)
-    else:
-        expr = quicksum( (coef*m_va[bus_name] for bus_name, coef in pf_sens.items() if abs(coef) >= sens_tol), start=pf_const, linear=True)
-
-    return expr
+    return _get_df_expr(model.va, pf_sens, pf_const, rel_tol, abs_tol)
 
 def declare_eq_branch_pf_lccm_approx(model, index_set, sensitivity, constant, rel_tol=None, abs_tol=None):
     """
@@ -701,32 +602,7 @@ def get_expr_branch_pfl_lccm_approx(model, branch_name, pfl_sens, pfl_const, rel
     """
     Create a pyomo power flow loss expression from CCM sensitivity
     """
-    if rel_tol is None:
-        rel_tol = 0.
-    if abs_tol is None:
-        abs_tol = 0.
-
-    max_coef = 1
-    sens_tol = max(abs_tol, rel_tol*max_coef)
-    ## NOTE: It would be easy to hold on to the 'ptdf' dictionary here,
-    ##       if we wanted to
-    m_va = model.va
-    ## if model.va is Var, we can use LinearExpression
-    ## LinearExpression may not have advantage for sparse LCCM constraints, but will be implemented analogously to FDF
-    if isinstance(m_va, pe.Var):
-        coef_list = list()
-        var_list = list()
-        for bus_name, coef in pfl_sens.items():
-            if abs(coef) >= sens_tol:
-                coef_list.append(coef)
-                var_list.append(m_va[bus_name])
-
-        lin_expr_list = [pfl_const] + coef_list + var_list
-        expr = LinearExpression(lin_expr_list)
-    else:
-        expr = quicksum( (coef*m_va[bus_name] for bus_name, coef in pfl_sens.items() if abs(coef) >= sens_tol), start=pfl_const, linear=True)
-
-    return expr
+    return _get_df_expr(model.va, pfl_sens, pfl_const, rel_tol, abs_tol)
 
 def declare_eq_branch_pfl_lccm_approx(model, index_set, sensitivity, constant, rel_tol=None, abs_tol=None):
     """
@@ -758,34 +634,7 @@ def get_expr_branch_qf_lccm_approx(model, branch_name, qf_sens, qf_const, rel_to
     """
     Create a pyomo power flow expression from CCM sensitivity
     """
-
-    if rel_tol is None:
-        rel_tol = 0.
-    if abs_tol is None:
-        abs_tol = 0.
-
-    max_coef = 1
-    sens_tol = max(abs_tol, rel_tol*max_coef)
-    ## NOTE: It would be easy to hold on to the 'ptdf' dictionary here,
-    ##       if we wanted to
-    m_vm = model.vm
-    ## if model.vm is Var, we can use LinearExpression
-    ## LinearExpression may not have advantage for sparse LCCM constraints, but will be implemented analogously to FDF
-    if isinstance(m_vm, pe.Var):
-        coef_list = list()
-        var_list = list()
-        #for bus_name, coef in PTDF.get_branch_ptdf_iterator(branch_name):
-        for bus_name, coef in qf_sens.items():
-            if abs(coef) >= sens_tol:
-                coef_list.append(coef)
-                var_list.append(m_vm[bus_name])
-
-        lin_expr_list = [qf_const] + coef_list + var_list
-        expr = LinearExpression(lin_expr_list)
-    else:
-        expr = quicksum( (coef*m_vm[bus_name] for bus_name, coef in qf_sens.items() if abs(coef) >= sens_tol), start=qf_const, linear=True)
-
-    return expr
+    return _get_df_expr(model.vm, qf_sens, qf_const, rel_tol, abs_tol)
 
 def declare_eq_branch_qf_lccm_approx(model, index_set, sensitivity, constant, rel_tol=None, abs_tol=None):
     """
@@ -820,32 +669,7 @@ def get_expr_branch_qfl_lccm_approx(model, branch_name, qfl_sens, qfl_const, rel
     """
     Create a pyomo power flow loss expression from CCM sensitivity
     """
-    if rel_tol is None:
-        rel_tol = 0.
-    if abs_tol is None:
-        abs_tol = 0.
-
-    max_coef = 1
-    sens_tol = max(abs_tol, rel_tol*max_coef)
-    ## NOTE: It would be easy to hold on to the 'qldf' dictionary here,
-    ##       if we wanted to
-    m_vm = model.vm
-    ## if model.vm is Var, we can use LinearExpression
-    ## LinearExpression may not have advantage for sparse LCCM constraints, but will be implemented analogously to FDF
-    if isinstance(m_vm, pe.Var):
-        coef_list = list()
-        var_list = list()
-        for bus_name, coef in qfl_sens.items():
-            if abs(coef) >= sens_tol:
-                coef_list.append(coef)
-                var_list.append(m_vm[bus_name])
-
-        lin_expr_list = [qfl_const] + coef_list + var_list
-        expr = LinearExpression(lin_expr_list)
-    else:
-        expr = quicksum( (coef*m_vm[bus_name] for bus_name, coef in qfl_sens.items() if abs(coef) >= sens_tol), start=qfl_const, linear=True)
-
-    return expr
+    return _get_df_expr(model.vm, qfl_sens, qfl_const, rel_tol, abs_tol)
 
 def declare_eq_branch_qfl_lccm_approx(model, index_set, sensitivity, constant, rel_tol=None, abs_tol=None):
     """
@@ -880,29 +704,7 @@ def declare_eq_ploss_fdf_simplified(model, sensitivity, constant, rel_tol, abs_t
     """
     m = model
 
-    if rel_tol is None:
-        rel_tol = 0.
-    if abs_tol is None:
-        abs_tol = 0.
-
-    max_coef = 1
-    sens_tol = max(abs_tol, rel_tol*max_coef)
-
-    ploss_is_var = isinstance(m.ploss, pe.Var)
-    if ploss_is_var:
-        m.eq_ploss = pe.Constraint()
-    else:
-        raise Exception("Missing variable for m.ploss")
-
-    p_nw_is_var = isinstance(m.p_nw, pe.Var)
-    if p_nw_is_var:
-        expr = quicksum((coef * m.p_nw[bus_name] for bus_name, coef in sensitivity.items() if abs(coef) >= sens_tol),
-                        start=constant, linear=True)
-
-        m.eq_ploss = m.ploss == expr
-
-    else:
-        raise Exception("Missing variable for m.p_nw")
+    m.eq_ploss = pe.Constraint(expr= m.ploss == _get_df_expr(m.p_nw, sensitivity, constant, rel_tol, abs_tol))
 
 
 def declare_eq_qloss_fdf_simplified(model, sensitivity, constant, rel_tol, abs_tol):
@@ -911,29 +713,8 @@ def declare_eq_qloss_fdf_simplified(model, sensitivity, constant, rel_tol, abs_t
     """
     m = model
 
-    if rel_tol is None:
-        rel_tol = 0.
-    if abs_tol is None:
-        abs_tol = 0.
+    m.eq_qloss = pe.Constraint(expr= m.qloss == _get_df_expr(m.q_nw, sensitivity, constant, rel_tol, abs_tol))
 
-    max_coef = 1
-    sens_tol = max(abs_tol, rel_tol*max_coef)
-
-    qloss_is_var = isinstance(m.qloss, pe.Var)
-    if qloss_is_var:
-        m.eq_qloss = pe.Constraint()
-    else:
-        raise Exception("Missing variable for m.qloss")
-
-    q_nw_is_var = isinstance(m.q_nw, pe.Var)
-    if qloss_is_var and q_nw_is_var:
-        expr = quicksum((coef * m.q_nw[bus_name] for bus_name, coef in sensitivity.items() if abs(coef) >= sens_tol),
-                        start=constant, linear=True)
-
-        m.eq_qloss = m.qloss == expr
-
-    else:
-        raise Exception("Missing variable for m.q_nw")
 
 def declare_eq_branch_power_qtdf_approx_depreciated(model, index_set, branches, buses, bus_q_loads, gens_by_bus,
                                         bus_bs_fixed_shunts, qtdf_tol=1e-10):

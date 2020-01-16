@@ -276,13 +276,15 @@ def add_thermal_violations(thermal_viol_lazy, SV, mb, md, solver, ptdf_options, 
                 ## add eq_pf_branch constraint
                 ptdf = branch_attrs['ptdf'][bn]
                 ptdf_c = branch_attrs['ptdf_c'][bn]
-                expr = libbranch.get_expr_branch_pf_fdf_approx(mb, bn, ptdf, ptdf_c, rel_tol=None, abs_tol=None)
+                expr = libbranch.get_expr_branch_pf_fdf_approx(mb, bn, ptdf, ptdf_c,
+                                                                rel_tol=rel_ptdf_tol, abs_tol=abs_ptdf_tol)
                 eq_pf_constr[bn] = pf[bn] == expr
                 if include_reactive:
                     ## add eq_qf_branch constraint
                     qtdf = branch_attrs['qtdf'][bn]
                     qtdf_c = branch_attrs['qtdf_c'][bn]
-                    expr = libbranch.get_expr_branch_qf_fdf_approx(mb, bn, qtdf, qtdf_c, rel_tol=None, abs_tol=None)
+                    expr = libbranch.get_expr_branch_qf_fdf_approx(mb, bn, qtdf, qtdf_c,
+                                                                    rel_tol=rel_ptdf_tol, abs_tol=abs_ptdf_tol)
                     eq_qf_constr[bn] = qf[bn] == expr
                     ## add ineq_branch_thermal_limit constraint
                     libbranch.add_constr_branch_thermal_limit(mb, bn, branch_attrs['rating_long_term'][bn])
@@ -328,7 +330,8 @@ def add_vmag_violations(vmag_viol_lazy, VMAG, mb, md, solver, ptdf_options, bus_
                 ## add eq_pf_branch constraint
                 vdf = bus_attrs['vdf'][bn]
                 vdf_c = bus_attrs['vdf_c'][bn]
-                expr = libbus.get_vm_expr_vdf_approx(mb, bn, vdf, vdf_c, rel_tol=None, abs_tol=None)
+                expr = libbus.get_vm_expr_vdf_approx(mb, bn, vdf, vdf_c,
+                                                        rel_tol=rel_ptdf_tol, abs_tol=abs_ptdf_tol)
                 constr[bn] = vm[bn] == expr
             yield i, bn
 
