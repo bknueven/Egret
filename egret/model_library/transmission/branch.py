@@ -1171,6 +1171,7 @@ def add_constr_branch_thermal_limit(model, branch_name, thermal_limit):
     """
 
     m = model
+    bn = branch_name
 
     for x,y in m._fdf_unitcircle:
         if thermal_limit is None:
@@ -1181,8 +1182,16 @@ def add_constr_branch_thermal_limit(model, branch_name, thermal_limit):
         _qf = y * thermal_limit
 
         ## Taylor series form
-        model.ineq_branch_thermal_limit[branch_name,x,y] = 2 * _pf * m.pf[branch_name] + 2 * _qf * m.qf[branch_name] \
-                                                     <= thermal_limit**2 + _pf**2 + _qf**2
+        #model.ineq_branch_thermal_limit[branch_name,x,y] = 2 * _pf * m.pf[branch_name] + 2 * _qf * m.qf[branch_name] \
+        #                                             <= thermal_limit**2 + _pf**2 + _qf**2
+
+        ## Taylor series form using LinearExpression
+        model.ineq_branch_thermal_limit[branch_name,x,y] = (None,
+                                                            LinearExpression(constant=0, 
+                                                                             linear_coefs=[  2*_pf, 2*_qf ], 
+                                                                             linear_vars=[m.pf[bn], m.qf[bn]] 
+                                                                            ),
+                                                            thermal_limit**2 + _pf**2 + _qf**2)
 
         ## Bilinear form
         #model.ineq_branch_thermal_limit[branch_name, x, y] = _pf * m.pf[branch_name] + _qf * m.qf[branch_name] \

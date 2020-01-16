@@ -512,6 +512,7 @@ def solve_fdf_simplified(model_data,
     '''
 
     import pyomo.environ as pe
+    import time
     from egret.common.solver_interface import _solve_model
     from egret.common.lazy_ptdf_utils import _lazy_model_solve_loop
     from pyomo.solvers.plugins.solvers.persistent_solver import PersistentSolver
@@ -519,29 +520,44 @@ def solve_fdf_simplified(model_data,
     m, md = fdf_model_generator(model_data, **kwargs)
 
     m.dual = pe.Suffix(direction=pe.Suffix.IMPORT)
-    if isinstance(solver, PersistentSolver) or 'persistent' in solver:
+
+    ## flag for persistent solver
+    persistent_solver = isinstance(solver, PersistentSolver) or 'persistent' in solver
+
+    if persistent_solver:
         vars_to_load = [var for var in m.p_nw.values()]
         vars_to_load += [var for var in m.q_nw.values()]
+        vars_to_load += [var for var in m.pf.values()]
+        vars_to_load += [var for var in m.qf.values()]
+        vars_to_load += [var for var in m.vm.values()]
     else:
         vars_to_load = None
     m, results, solver = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,
                               symbolic_solver_labels=symbolic_solver_labels,options=options,return_solver=True,
                                       vars_to_load=vars_to_load)
 
+    if persistent_solver:
+        init_solve_time = results.Solver[0]['Wallclock time']
+    else:
+        init_solve_time = results.Solver.Time
 
+    start_loop_time = time.time()
     if fdf_model_generator == create_simplified_fdf_model and m._ptdf_options['lazy']:
         iter_limit = m._ptdf_options['iteration_limit']
         term_cond = _lazy_model_solve_loop(m, md, solver, timelimit=timelimit, solver_tee=solver_tee,
                                            symbolic_solver_labels=symbolic_solver_labels,iteration_limit=iter_limit,
                                            vars_to_load = vars_to_load)
-    if isinstance(solver, PersistentSolver):
-        solver.load_vars()
+    loop_time = time.time()-start_loop_time
+    total_time = init_solve_time+loop_time
 
+    if persistent_solver:
+        solver.load_vars()
+        solver.load_duals()
 
     if not hasattr(md,'results'):
         md.data['results'] = dict()
     # TODO: needs "manual" time recording due to use of persistent solver
-    #md.data['results']['time'] = results.Solver.Time
+    md.data['results']['time'] = total_time
     md.data['results']['#_cons'] = results.Problem[0]['Number of constraints']
     md.data['results']['#_vars'] = results.Problem[0]['Number of variables']
     md.data['results']['#_nz'] = results.Problem[0]['Number of nonzeros']
@@ -590,7 +606,7 @@ def compare_to_acopf():
 
     # set case and filepath
     path = os.path.dirname(__file__)
-    #filename = 'pglib_opf_case3_lmbd.m'
+    filename = 'pglib_opf_case3_lmbd.m'
     #filename = 'pglib_opf_case5_pjm.m'
     #filename = 'pglib_opf_case14_ieee.m'
     #filename = 'pglib_opf_case30_ieee.m'
@@ -598,7 +614,7 @@ def compare_to_acopf():
     #filename = 'pglib_opf_case118_ieee.m'
     #filename = 'pglib_opf_case162_ieee_dtc.m'
     #filename = 'pglib_opf_case179_goc.m'
-    filename = 'pglib_opf_case300_ieee.m'
+    #filename = 'pglib_opf_case300_ieee.m'
     #filename = 'pglib_opf_case500_tamu.m'
     matpower_file = os.path.join(path, '../../download/pglib-opf-master/', filename)
     md = create_ModelData(matpower_file)
@@ -737,16 +753,16 @@ if __name__ == '__main__':
 
     # set case and filepath
     path = os.path.dirname(__file__)
-    # filename = 'pglib_opf_case3_lmbd.m'
-    # filename = 'pglib_opf_case5_pjm.m'
-    # filename = 'pglib_opf_case14_ieee.m'
-    # filename = 'pglib_opf_case30_ieee.m'
-    # filename = 'pglib_opf_case57_ieee.m'
-    # filename = 'pglib_opf_case118_ieee.m'
-    # filename = 'pglib_opf_case162_ieee_dtc.m'
-    # filename = 'pglib_opf_case179_goc.m'
-    filename = 'pglib_opf_case300_ieee.m'
-    # filename = 'pglib_opf_case500_tamu.m'
+    filename = 'pglib_opf_case3_lmbd.m'
+    #filename = 'pglib_opf_case5_pjm.m'
+    #filename = 'pglib_opf_case14_ieee.m'
+    #filename = 'pglib_opf_case30_ieee.m'
+    #filename = 'pglib_opf_case57_ieee.m'
+    #filename = 'pglib_opf_case118_ieee.m'
+    #filename = 'pglib_opf_case162_ieee_dtc.m'
+    #filename = 'pglib_opf_case179_goc.m'
+    #filename = 'pglib_opf_case300_ieee.m'
+    #filename = 'pglib_opf_case500_tamu.m'
     matpower_file = os.path.join(path, '../../download/pglib-opf-master/', filename)
     md = create_ModelData(matpower_file)
 
@@ -754,7 +770,7 @@ if __name__ == '__main__':
     from egret.models.acopf import solve_acopf
     md_ac, m_ac, results = solve_acopf(md, "ipopt", return_model=True, return_results=True, solver_tee=False)
     print('ACOPF cost: $%3.2f' % md_ac.data['system']['total_cost'])
-    print(results.Solver)
+    print('ACOPF time: %3.5f' % md_ac.data['results']['time'])
 
     # keyword arguments
     kwargs = {}
@@ -764,10 +780,10 @@ if __name__ == '__main__':
     options={}
     options['method'] = 1
     md, m, results = solve_fdf_simplified(md_ac, "gurobi_persistent", fdf_model_generator=create_simplified_fdf_model,
-                                          return_model=True, return_results=True, solver_tee=True
-                                          , options=options, **kwargs)
+                                          return_model=True, return_results=True, solver_tee=False,
+                                          options=options, **kwargs)
     print('FDF cost: $%3.2f' % md.data['system']['total_cost'])
-    print(results.Solver)
+    print('FDF time: %3.5f' % md.data['results']['time'])
 
 # not solving pglib_opf_case57_ieee
 # pglib_opf_case500_tamu

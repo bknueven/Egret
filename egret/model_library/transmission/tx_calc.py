@@ -17,6 +17,7 @@ import scipy as sp
 import pandas as pd
 from math import cos, sin
 from egret.model_library.defn import BasePointType, ApproximationType
+from pyomo.environ import value
 
 def calculate_conductance(branch):
     rs = branch['resistance']
@@ -996,10 +997,8 @@ def linsolve_theta_fdf(model, model_data, base_point=BasePointType.SOLUTION, map
 
     Since sensitivity matrices are recalculated, this MUST be done BEFORE saving model solution to model_data!
     '''
+    md = model_data
 
-    from pyomo.environ import value
-
-    md = model_data.clone_in_service()
     buses = dict(md.elements(element_type='bus'))
     branches = dict(md.elements(element_type='branch'))
 
@@ -1031,8 +1030,6 @@ def linsolve_theta_fdf(model, model_data, base_point=BasePointType.SOLUTION, map
         m_p_nw[idx] = value(model.p_nw[b])
 
     if 'va_SENSI' in md.data['system']:
-
-        print('solving theta with precomputed inverse.')
 
         Z = md.data['system']['va_SENSI']
         c = md.data['system']['va_CONST']
@@ -1081,10 +1078,8 @@ def linsolve_vmag_fdf(model, model_data, base_point=BasePointType.SOLUTION, mapp
 
     Since sensitivity matrices are recalculated, this MUST be done BEFORE saving model solution to model_data!
     '''
+    md = model_data
 
-    from pyomo.environ import value
-
-    md = model_data.clone_in_service()
     buses = dict(md.elements(element_type='bus'))
     branches = dict(md.elements(element_type='branch'))
 
@@ -1116,8 +1111,6 @@ def linsolve_vmag_fdf(model, model_data, base_point=BasePointType.SOLUTION, mapp
         m_q_nw[idx] = value(model.q_nw[b])
 
     if 'vm_SENSI' in md.data['system']:
-
-        print('solving vmag with precomputed inverse.')
 
         Z = md.data['system']['vm_SENSI']
         c = md.data['system']['vm_CONST']
