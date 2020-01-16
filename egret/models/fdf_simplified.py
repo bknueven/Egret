@@ -525,11 +525,12 @@ def solve_fdf_simplified(model_data,
     persistent_solver = isinstance(solver, PersistentSolver) or 'persistent' in solver
 
     if persistent_solver:
-        vars_to_load = [var for var in m.p_nw.values()]
-        vars_to_load += [var for var in m.q_nw.values()]
-        vars_to_load += [var for var in m.pf.values()]
-        vars_to_load += [var for var in m.qf.values()]
-        vars_to_load += [var for var in m.vm.values()]
+        vars_to_load = list()
+        vars_to_load.extend(m.p_nw.values())
+        vars_to_load.extend(m.q_nw.values())
+        vars_to_load.extend(m.pf.values())
+        vars_to_load.extend(m.qf.values())
+        vars_to_load.extend(m.vm.values())
     else:
         vars_to_load = None
     m, results, solver = _solve_model(m,solver,timelimit=timelimit,solver_tee=solver_tee,

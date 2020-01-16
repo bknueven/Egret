@@ -19,10 +19,6 @@ import numpy as np
 
 from enum import Enum
 
-from pyutilib.misc.timing import TicTocTimer
-
-timer = TicTocTimer()
-
 class LazyPTDFTerminationCondition(Enum):
     NORMAL = 1
     ITERATION_LIMIT = 2
@@ -36,7 +32,7 @@ def populate_default_ptdf_options(ptdf_options):
     if 'abs_flow_tol' not in ptdf_options:
         ptdf_options['abs_flow_tol'] = 1.e-3
     if 'rel_flow_tol' not in ptdf_options:
-        ptdf_options['rel_flow_tol'] = 1.e-4
+        ptdf_options['rel_flow_tol'] = 1.e-5
     if 'pu_vm_tol' not in ptdf_options:
         ptdf_options['pu_vm_tol'] = 1.e-5
     if 'iteration_limit' not in ptdf_options:
