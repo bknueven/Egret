@@ -89,17 +89,51 @@ def get_ramping_gens(m):
 
 def ramping_polytope_block_rule(rp, g):
     '''
-    Constructs a block for the ramping polytope as 
-    presented in 
+    Constructs a block for the ramping polytope as
+    presented in
 
     B. Knueven, J. Ostrowski, J. Wang (2018). The Ramping Polytope
-    and Cut-Generation for the Unit Commitment Problem. INFORMS 
+    and Cut-Generation for the Unit Commitment Problem. INFORMS
     Journal on Computing 30(4), 739-749.
+    '''
+    model = rp.model()
+    _make_ramping_polytope(rp, model, g, model.UnitOn, model.UnitStart,
+                            model.UnitStop, model.PowerGeneratedAboveMinimum,
+                            model.ReserveProvided, model.PiecewiseProduction)
+
+
+def _make_ramping_polytope(rp, model, g, UnitOn, UnitStart,
+                            UnitStop, PowerGeneratedAboveMinimum,
+                            ReserveProvided,
+                            PiecewiseProduction):
+    '''
+    Constructs a block for the ramping polytope as
+    presented in
+
+    B. Knueven, J. Ostrowski, J. Wang (2018). The Ramping Polytope
+    and Cut-Generation for the Unit Commitment Problem. INFORMS
+    Journal on Computing 30(4), 739-749.
+
+    Based on an existing unit commitment model, a Pyomo Block rp,
+    a specific generator g, and provide Pyomo indexed Vars, which
+    may or may not be on the Pyomo ConcreteModel model.
+
+    Parameters
+    ----------
+
+    rp                         : Pyomo model/block on which to construct the ramping polytope
+    model                      : Pyomo Egret unit commitment model which to use for data
+    g                          : model.ThermalGenerator for which to build the ramping polytope
+    UnitOn                     : UnitOn indexed variable (g,t) to attach to the ramping polytope
+    UnitStart                  : UnitStart indexed variable (g,t) to attach to the ramping polytope
+    UnitStop                   : UnitStop indexed variable (g,t) to attach to the ramping polytope
+    PowerGeneratedAboveMinimum : PowerGeneratedAboveMinimum indexed variable (g,t) to attach to the ramping polytope
+    ReserveProvided            : ReserveProvided indexed variable (g,t) to attach to the ramping polytope
+    PiecewiseProduction        : PiecewiseProduction indexed variable (g,t,l) to attach to the ramping polytope
     '''
 
     ## assume the generator parameters
     ## live on the main model
-    model = rp.model() 
     value = pe.value
     quicksum = pe.quicksum
 
@@ -162,13 +196,13 @@ def ramping_polytope_block_rule(rp, g):
             rp.downtime_y[t] = quicksum( rp.y[bt,et] for bt,et in start_stop_pairs if (bt <= t < et+DT) ) <= 1
 
             rp.on_link_y[t] = quicksum( rp.y[bt,et] for bt,et in start_stop_pairs if (bt <= t < et) ) \
-                                 == model.UnitOn[g,t]
+                                 == UnitOn[g,t]
 
             rp.start_link_y[t] = quicksum( rp.y[bt,et] for bt,et in start_stop_pairs if (bt == t) ) \
-                                 == model.UnitStart[g,t]
+                                 == UnitStart[g,t]
 
             rp.stop_link_y[t] = quicksum( rp.y[bt,et] for bt,et in start_stop_pairs if (et == t) ) \
-                                 == model.UnitStop[g,t]
+                                 == UnitStop[g,t]
 
     rp.p_ints = pe.Var(timeperiods, start_stop_pairs, within=pe.NonNegativeReals)
     rp.r_ints = pe.Var(timeperiods, start_stop_pairs, within=pe.NonNegativeReals)
@@ -215,10 +249,10 @@ def ramping_polytope_block_rule(rp, g):
     for t in timeperiods:
         rp.p_link_p_ints[t] = \
                 quicksum( rp.p_ints[t,pair] for pair in start_stop_pairs ) == \
-                    model.PowerGeneratedAboveMinimum[g,t]
+                    PowerGeneratedAboveMinimum[g,t]
         rp.r_link_r_ints[t] = \
                 quicksum( rp.r_ints[t,pair] for pair in start_stop_pairs ) == \
-                    model.ReserveProvided[g,t]
+                    ReserveProvided[g,t]
 
     if len(model.PowerGenerationPiecewisePoints[g,t]) > 2:
         l_range = range(len(model.PowerGenerationPiecewisePoints[g,t])-1)
@@ -255,7 +289,7 @@ def ramping_polytope_block_rule(rp, g):
             l,t = lt
             rp.pl_link[lt] = \
                     quicksum( rp.pl_ints[lt,pair] for pair in start_stop_pairs ) \
-                        == model.PiecewiseProduction[g,t,l]
+                        == PiecewiseProduction[g,t,l]
 
 ## we'll require that non-ramping constrained generators have a convex hull description
 @add_model_attr('unit_convex_hull', requires = {'data_loader' : None,
