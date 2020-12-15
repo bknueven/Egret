@@ -97,15 +97,16 @@ def ramping_polytope_block_rule(rp, g):
     Journal on Computing 30(4), 739-749.
     '''
     model = rp.model()
-    _make_ramping_polytope(rp, model, g, model.UnitOn, model.UnitStart,
+    make_ramping_polytope(rp, model, g, model.UnitOn, model.UnitStart,
                             model.UnitStop, model.PowerGeneratedAboveMinimum,
                             model.ReserveProvided, model.PiecewiseProduction)
 
 
-def _make_ramping_polytope(rp, model, g, UnitOn, UnitStart,
+def make_ramping_polytope(rp, model, g, UnitOn, UnitStart,
                             UnitStop, PowerGeneratedAboveMinimum,
                             ReserveProvided,
-                            PiecewiseProduction):
+                            PiecewiseProduction,
+                            z=0):
     '''
     Constructs a block for the ramping polytope as
     presented in
@@ -130,6 +131,7 @@ def _make_ramping_polytope(rp, model, g, UnitOn, UnitStart,
     PowerGeneratedAboveMinimum : PowerGeneratedAboveMinimum indexed variable (g,t) to attach to the ramping polytope
     ReserveProvided            : ReserveProvided indexed variable (g,t) to attach to the ramping polytope
     PiecewiseProduction        : PiecewiseProduction indexed variable (g,t,l) to attach to the ramping polytope
+    z                          : For cut-generators, relaxation variable
     '''
 
     ## assume the generator parameters
@@ -215,34 +217,34 @@ def _make_ramping_polytope(rp, model, g, UnitOn, UnitStart,
         bt,et = pair
         for t in timeperiods:
             if bt > t:
-                rp.capacity[t,pair] = rp.p_ints[t,pair] + rp.r_ints[t,pair] <= 0
+                rp.capacity[t,pair] = rp.p_ints[t,pair] + rp.r_ints[t,pair] <= 0 + z
             elif bt == t:
                 rp.capacity[t,pair] = \
-                        rp.p_ints[t,pair] + rp.r_ints[t,pair] <= ( StartupRamp[t] - MinP[t])*rp.y[pair]
+                        rp.p_ints[t,pair] + rp.r_ints[t,pair] <= ( StartupRamp[t] - MinP[t])*rp.y[pair] + z
             elif bt < t:
                 if t < et:
                     if t == timeperiods.first():
                         rp.ramp_up[t,pair] = \
                             rp.p_ints[t,pair] + rp.r_ints[t,pair] \
                             - P0*rp.y[pair] \
-                                        <= (RampUp[t] + 0  - MinP[t])*rp.y[pair]
+                                        <= (RampUp[t] + 0  - MinP[t])*rp.y[pair] + z
                         rp.ramp_down[t,pair] = \
                             P0*rp.y[pair] \
                             - rp.p_ints[t,pair] \
-                                        <= (RampDown[t] + MinP[t] - 0)*rp.y[pair]
+                                        <= (RampDown[t] + MinP[t] - 0)*rp.y[pair] + z
                     else:
                         rp.ramp_up[t,pair] = \
-                            rp.p_ints[t,pair] + rp.r_ints[t,pair] - rp.p_ints[t-1,pair] <= (RampUp[t] + MinP[t-1] - MinP[t])*rp.y[pair]
+                            rp.p_ints[t,pair] + rp.r_ints[t,pair] - rp.p_ints[t-1,pair] <= (RampUp[t] + MinP[t-1] - MinP[t])*rp.y[pair] + z
                         rp.ramp_down[t,pair] = \
-                            rp.p_ints[t-1,pair] - rp.p_ints[t,pair] <= (RampDown[t] + MinP[t] - MinP[t-1])*rp.y[pair]
+                            rp.p_ints[t-1,pair] - rp.p_ints[t,pair] <= (RampDown[t] + MinP[t] - MinP[t-1])*rp.y[pair] + z
                     if t == et-1 and et <= timeperiods.last():
                         rp.capacity[t,pair] = \
-                                rp.p_ints[t,pair] + rp.r_ints[t,pair] <= (ShutdownRamp[t] - MinP[t])*rp.y[pair]
+                                rp.p_ints[t,pair] + rp.r_ints[t,pair] <= (ShutdownRamp[t] - MinP[t])*rp.y[pair] + z
                     else:
                         rp.capacity[t,pair] = \
-                                rp.p_ints[t,pair] + rp.r_ints[t,pair] <= (MaxP[t] - MinP[t])*rp.y[pair]
+                                rp.p_ints[t,pair] + rp.r_ints[t,pair] <= (MaxP[t] - MinP[t])*rp.y[pair] + z
                 elif t >= et:
-                    rp.capacity[t,pair] = rp.p_ints[t,pair] + rp.r_ints[t,pair] <= 0
+                    rp.capacity[t,pair] = rp.p_ints[t,pair] + rp.r_ints[t,pair] <= 0 + z
 
     rp.p_link_p_ints = pe.Constraint(timeperiods)
     rp.r_link_r_ints = pe.Constraint(timeperiods)
@@ -254,42 +256,43 @@ def _make_ramping_polytope(rp, model, g, UnitOn, UnitStart,
                 quicksum( rp.r_ints[t,pair] for pair in start_stop_pairs ) == \
                     ReserveProvided[g,t]
 
-    if len(model.PowerGenerationPiecewisePoints[g,t]) > 2:
-        l_range = range(len(model.PowerGenerationPiecewisePoints[g,t])-1)
+    # mirror what happens in production_costs.py
+    l_lengths = { t : len(model.PowerGenerationPiecewisePoints[g,t]) for t in timeperiods }
+    l_lengths = { t : l_length-1 for t, l_length in l_lengths.items() if l_length > 2 }
 
-        l_ints_time = [ (l,t) for l in l_range for t in timeperiods ]
-        power_generation_piecewise_points = \
-                { (idx,t) : val \
-                    for idx,val in enumerate(model.PowerGenerationPiecewisePoints[g,t]) for t in timeperiods }
-        rp.pl_ints = pe.Var(l_ints_time, start_stop_pairs, within=pe.NonNegativeReals)
-        
-        rp.pl_capacity = pe.Constraint(l_ints_time, start_stop_pairs)
-        rp.pl_int_p_int_link = pe.Constraint(timeperiods, start_stop_pairs)
-        for pair in start_stop_pairs:
-            bt,et = pair
-            for lt in l_ints_time:
-                l,t = lt
-                if bt > t:
-                    rp.pl_capacity[lt, pair] = rp.pl_ints[lt, pair] <= 0
-                else:
-                    if t < et:
-                        rp.pl_capacity[lt, pair] = \
-                            rp.pl_ints[lt, pair] <= \
-                            (power_generation_piecewise_points[l+1,t]
-                                    - power_generation_piecewise_points[l,t])*rp.y[pair]
-                    else:
-                        rp.pl_capacity[lt, pair] = rp.pl_ints[lt, pair] <= 0
+    l_ints_time = [ (l,t) for t,length in l_lengths.items() for l in range(length) ]
+    power_generation_piecewise_points = \
+            { (idx,t) : val \
+                for idx,val in enumerate(model.PowerGenerationPiecewisePoints[g,t]) for t in l_lengths }
+    rp.pl_ints = pe.Var(l_ints_time, start_stop_pairs, within=pe.NonNegativeReals)
 
-            for t in timeperiods:
-                rp.pl_int_p_int_link[t,pair] = \
-                        quicksum( rp.pl_ints[l,t,pair] for l in l_range ) == rp.p_ints[t,pair] 
-         
-        rp.pl_link = pe.Constraint(l_ints_time)
+    rp.pl_capacity = pe.Constraint(l_ints_time, start_stop_pairs)
+    rp.pl_int_p_int_link = pe.Constraint(timeperiods, start_stop_pairs)
+    for pair in start_stop_pairs:
+        bt,et = pair
         for lt in l_ints_time:
             l,t = lt
-            rp.pl_link[lt] = \
-                    quicksum( rp.pl_ints[lt,pair] for pair in start_stop_pairs ) \
-                        == PiecewiseProduction[g,t,l]
+            if bt > t:
+                rp.pl_capacity[lt, pair] = rp.pl_ints[lt, pair] <= 0 + z
+            else:
+                if t < et:
+                    rp.pl_capacity[lt, pair] = \
+                        rp.pl_ints[lt, pair] <= \
+                        (power_generation_piecewise_points[l+1,t]
+                                - power_generation_piecewise_points[l,t])*rp.y[pair] + z
+                else:
+                    rp.pl_capacity[lt, pair] = rp.pl_ints[lt, pair] <= 0 + z
+
+        for t in timeperiods:
+            rp.pl_int_p_int_link[t,pair] = \
+                    quicksum( rp.pl_ints[l,t,pair] for l in range(l_lengths[t]) ) == rp.p_ints[t,pair]
+
+    rp.pl_link = pe.Constraint(l_ints_time)
+    for lt in l_ints_time:
+        l,t = lt
+        rp.pl_link[lt] = \
+                quicksum( rp.pl_ints[lt,pair] for pair in start_stop_pairs ) \
+                    == PiecewiseProduction[g,t,l]
 
 ## we'll require that non-ramping constrained generators have a convex hull description
 @add_model_attr('unit_convex_hull', requires = {'data_loader' : None,
