@@ -283,7 +283,7 @@ def make_ramping_polytope(rp, model, g, UnitOn, UnitStart,
                 else:
                     rp.pl_capacity[lt, pair] = rp.pl_ints[lt, pair] <= 0 + z
 
-        for t in timeperiods:
+        for t in l_lengths:
             rp.pl_int_p_int_link[t,pair] = \
                     quicksum( rp.pl_ints[l,t,pair] for l in range(l_lengths[t]) ) == rp.p_ints[t,pair]
 
