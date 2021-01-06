@@ -96,7 +96,7 @@ def ramping_polytope_block_rule(rp, g):
     and Cut-Generation for the Unit Commitment Problem. INFORMS
     Journal on Computing 30(4), 739-749.
     '''
-    model = rp.model()
+    model = rp.parent_block()
     make_ramping_polytope(rp, model, g, model.UnitOn, model.UnitStart,
                             model.UnitStop, model.PowerGeneratedAboveMinimum,
                             model.ReserveProvided, model.PiecewiseProduction)
@@ -136,7 +136,6 @@ def make_ramping_polytope(rp, model, g, UnitOn, UnitStart,
 
     ## assume the generator parameters
     ## live on the parent block
-    model = rp.parent_block()
     value = pe.value
     quicksum = pe.quicksum
 
