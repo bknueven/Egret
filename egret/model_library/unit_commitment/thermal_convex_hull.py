@@ -135,7 +135,8 @@ def make_ramping_polytope(rp, model, g, UnitOn, UnitStart,
     '''
 
     ## assume the generator parameters
-    ## live on the main model
+    ## live on the parent block
+    model = rp.parent_block()
     value = pe.value
     quicksum = pe.quicksum
 

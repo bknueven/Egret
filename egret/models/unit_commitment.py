@@ -722,7 +722,7 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
         Use symbolic solver labels when writing to the solver (default is False)
     iteration_limit : int (optional)
         Number of iterations before a hard termination (default is 100000)
-    var_to_load : None, list (optional)
+    vars_to_load : None, list (optional)
         Applies only to persistent solvers. If None, every primal variable is loaded.
         If a list, then should be a list of pyomo Vars to be loaded into the pyomo model
         at termination. Default is None.
@@ -805,6 +805,8 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
 
         if terminate_this_iter and not add_all_lazy_violations:
             if warmstart_loop:
+                if persistent_solver:
+                    lpu._load_pf_slacks(solver, m, t_subset)
                 _lazy_ptdf_warmstart_copy_violations(m, md, time_periods, solver, ptdf_options, prepend_str)
                 results = _lazy_ptdf_solve(m, solver, persistent_solver, symbolic_solver_labels, solver_tee, vars_to_load, solve_method_options)
             if persistent_solver and duals and (results is not None) and (vars_to_load is None):
@@ -832,6 +834,8 @@ def _lazy_ptdf_uc_solve_loop(m, md, solver, timelimit, solver_tee=True, symbolic
     else:
         logger.warning(prepend_str+'WARNING: Exiting on maximum iterations for lazy PTDF model. Result is not transmission feasible.')
         if warmstart_loop:
+            if persistent_solver:
+                lpu._load_pf_slacks(solver, m, t_subset)
             _lazy_ptdf_warmstart_copy_violations(m, md, time_periods, solver, ptdf_options)
             results = _lazy_ptdf_solve(m, solver, persistent_solver, symbolic_solver_labels, solver_tee, vars_to_load, solve_method_options)
         if persistent_solver and duals and (results is not None) and (vars_to_load is None):
@@ -859,16 +863,8 @@ def _outer_lazy_ptdf_solve_loop(m, solver, mipgap, timelimit, solver_tee, symbol
             b = m.TransmissionBlock[t]
             if isinstance(b.p_nw, pe.Var):
                 vars_to_load.extend(b.p_nw.values())
-                vars_to_load.extend(b.pfi_slack_neg.values())
-                vars_to_load.extend(b.pfi_slack_pos.values())
-                vars_to_load.extend(b.pf_slack_neg.values())
-                vars_to_load.extend(b.pf_slack_pos.values())
                 if t in t_subset:
                     vars_to_load_t_subset.extend(b.p_nw.values())
-                    vars_to_load_t_subset.extend(b.pfi_slack_neg.values())
-                    vars_to_load_t_subset.extend(b.pfi_slack_pos.values())
-                    vars_to_load_t_subset.extend(b.pf_slack_neg.values())
-                    vars_to_load_t_subset.extend(b.pf_slack_pos.values())
             else:
                 vars_to_load = None
                 vars_to_load_t_subset = None
@@ -956,6 +952,10 @@ def _preallocated_list(other_iter):
 def _save_uc_results(m, relaxed):
     from pyomo.environ import value
 
+    # dual suffix is on top-level model
+    if relaxed:
+        dual = m.model().dual
+
     md = m.model_data
 
     # save results data to ModelData object
@@ -981,6 +981,15 @@ def _save_uc_results(m, relaxed):
 
     fs = bool(m.fuel_supply)
     fc = bool(m.fuel_consumption)
+
+    ## All prices are in $/(MW*time_period) by construction
+    ## time_period_length_hours == hours/time_period, so
+    ##    $/(MW*time_period)/time_period_length_hours
+    ## == $/(MW*time_period) * (time_period/hours)
+    ## == $/(MW*hours) == $/MWh.
+    ## All dual values are divided by this quantity
+    ## so as to report out $/MWh.
+    time_period_length_hours = value(m.TimePeriodLengthHours)
 
     ## all of the potential constraints that could limit maximum output
     ## Not all unit commitment models have these constraints, so first
@@ -1168,8 +1177,11 @@ def _save_uc_results(m, relaxed):
             l_dict['pf'] = _time_series_dict(pf_dict)
             if l in m.BranchesWithSlack:
                 pf_violation_dict = _preallocated_list(data_time_periods)
-                for dt, mt in enumerate(m.TimePeriods):
-                    pf_violation_dict[dt] = value(m.TransmissionBlock[mt].pf_slack_pos[l] - m.TransmissionBlock[mt].pf_slack_neg[l])
+                for dt, (mt, b) in enumerate(m.TransmissionBlock.items()):
+                    if l in b.pf_slack_pos:
+                        pf_violation_dict[dt] = value(b.pf_slack_pos[l] - b.pf_slack_neg[l])
+                    else:
+                        pf_violation_dict[dt] = 0.
                 l_dict['pf_violation'] = _time_series_dict(pf_violation_dict)
 
         for b,b_dict in buses.items():
@@ -1186,7 +1198,7 @@ def _save_uc_results(m, relaxed):
             if relaxed:
                 lmp_dict = _preallocated_list(data_time_periods)
                 for dt, mt in enumerate(m.TimePeriods):
-                    lmp_dict[dt] = value(m.dual[m.TransmissionBlock[mt].eq_p_balance[b]])
+                    lmp_dict[dt] = value(dual[m.TransmissionBlock[mt].eq_p_balance[b]])/time_period_length_hours
                 b_dict['lmp'] = _time_series_dict(lmp_dict)
 
         for i,i_dict in interfaces.items():
@@ -1196,8 +1208,11 @@ def _save_uc_results(m, relaxed):
             i_dict['pf'] = _time_series_dict(pf_dict)
             if i in m.InterfacesWithSlack:
                 pf_violation_dict = _preallocated_list(data_time_periods)
-                for dt, mt in enumerate(m.TimePeriods):
-                    pf_violation_dict[dt] = value(m.TransmissionBlock[mt].pfi_slack_pos[i] - m.TransmissionBlock[mt].pfi_slack_neg[i])
+                for dt, (mt, b) in enumerate(m.TransmissionBlock.items()):
+                    if i in b.pfi_slack_pos:
+                        pf_violation_dict[dt] = value(b.pfi_slack_pos[i] - b.pfi_slack_neg[i])
+                    else:
+                        pf_violation_dict[dt] = 0.
                 i_dict['pf_violation'] = _time_series_dict(pf_violation_dict)
 
         for k,k_dict in dc_branches.items():
@@ -1234,7 +1249,7 @@ def _save_uc_results(m, relaxed):
                 voltage_angle_dict[mt][bn] = VA[i]
 
             if relaxed:
-                LMP = PTDF.calculate_LMP(b, m.dual, b.eq_p_balance)
+                LMP = PTDF.calculate_LMP(b, dual, b.eq_p_balance)
                 lmps_dict[mt] = dict()
                 for i,bn in enumerate(buses_idx):
                     lmps_dict[mt][bn] = LMP[i]
@@ -1246,8 +1261,11 @@ def _save_uc_results(m, relaxed):
             i_dict['pf'] = _time_series_dict(pf_dict)
             if i in m.InterfacesWithSlack:
                 pf_violation_dict = _preallocated_list(data_time_periods)
-                for dt, mt in enumerate(m.TimePeriods):
-                    pf_violation_dict[dt] = value(m.TransmissionBlock[mt].pfi_slack_pos[i] - m.TransmissionBlock[mt].pfi_slack_neg[i])
+                for dt, (mt, b) in enumerate(m.TransmissionBlock.items()):
+                    if i in b.pfi_slack_pos:
+                        pf_violation_dict[dt] = value(b.pfi_slack_pos[i] - b.pfi_slack_neg[i])
+                    else:
+                        pf_violation_dict[dt] = 0.
                 i_dict['pf_violation'] = _time_series_dict(pf_violation_dict)
 
         for l,l_dict in branches.items():
@@ -1258,8 +1276,11 @@ def _save_uc_results(m, relaxed):
             l_dict['pf'] = _time_series_dict(pf_dict)
             if l in m.BranchesWithSlack:
                 pf_violation_dict = _preallocated_list(data_time_periods)
-                for dt, mt in enumerate(m.TimePeriods):
-                    pf_violation_dict[dt] = value(m.TransmissionBlock[mt].pf_slack_pos[l] - m.TransmissionBlock[mt].pf_slack_neg[l])
+                for dt, (mt, b) in enumerate(m.TransmissionBlock.items()):
+                    if l in b.pf_slack_pos:
+                        pf_violation_dict[dt] = value(b.pf_slack_pos[l] - b.pf_slack_neg[l])
+                    else:
+                        pf_violation_dict[dt] = 0.
                 l_dict['pf_violation'] = _time_series_dict(pf_violation_dict)
 
         for b,b_dict in buses.items():
@@ -1276,7 +1297,7 @@ def _save_uc_results(m, relaxed):
             if relaxed:
                 lmp_dict = _preallocated_list(data_time_periods)
                 for dt, mt in enumerate(m.TimePeriods):
-                    lmp_dict[dt] = lmps_dict[mt][b]
+                    lmp_dict[dt] = lmps_dict[mt][b]/time_period_length_hours
                 b_dict['lmp'] = _time_series_dict(lmp_dict)
 
         for k,k_dict in dc_branches.items():
@@ -1308,7 +1329,7 @@ def _save_uc_results(m, relaxed):
             if relaxed:
                 lmp_dict = _preallocated_list(data_time_periods)
                 for dt, mt in enumerate(m.TimePeriods):
-                    lmp_dict[dt] = value(m.dual[m.PowerBalance[b,mt]])
+                    lmp_dict[dt] = value(dual[m.PowerBalance[b,mt]])/time_period_length_hours
                 b_dict['lmp'] = _time_series_dict(lmp_dict)
 
         for i,i_dict in interfaces.items():
@@ -1337,7 +1358,7 @@ def _save_uc_results(m, relaxed):
         if relaxed:
             p_price_dict = _preallocated_list(data_time_periods)
             for dt, mt in enumerate(m.TimePeriods):
-                p_price_dict[dt] = value(m.dual[m.TransmissionBlock[mt].eq_p_balance])
+                p_price_dict[dt] = value(dual[m.TransmissionBlock[mt].eq_p_balance])/time_period_length_hours
             sys_dict['p_price'] = _time_series_dict(p_price_dict)
     else:
         raise Exception("Unrecongized network type "+m.power_balance)
@@ -1355,7 +1376,7 @@ def _save_uc_results(m, relaxed):
             for dt, mt in enumerate(m.TimePeriods):
                 ## TODO: if the 'relaxed' flag is set, we should automatically
                 ##       pick a formulation which uses the MLR reserve constraints
-                sr_p_dict[dt] = value(m.dual[m.EnforceReserveRequirements[mt]])
+                sr_p_dict[dt] = value(dual[m.EnforceReserveRequirements[mt]])/time_period_length_hours
             sys_dict['reserve_price'] = _time_series_dict(sr_p_dict)
 
 
@@ -1452,7 +1473,7 @@ def _save_uc_results(m, relaxed):
                     if relaxed:
                         req_price_dict = _preallocated_list(data_time_periods)
                         for dt, mt in enumerate(m.TimePeriods):
-                            req_price_dict[dt] = value(m.dual[req_dict['balance_m'][me,mt]])
+                            req_price_dict[dt] = value(dual[req_dict['balance_m'][me,mt]])/time_period_length_hours
                         e_dict[req_dict['price']] = _time_series_dict(req_price_dict)
 
     def _populate_system_reserves(sys_dict):
@@ -1465,7 +1486,7 @@ def _save_uc_results(m, relaxed):
                 if relaxed:
                     req_price_dict = _preallocated_list(data_time_periods)
                     for dt, mt in enumerate(m.TimePeriods):
-                        req_price_dict[dt] = value(m.dual[req_dict['balance_m'][mt]])
+                        req_price_dict[dt] = value(dual[req_dict['balance_m'][mt]])/time_period_length_hours
                     sys_dict[req_dict['price']] = _time_series_dict(req_price_dict)
     
     _populate_zonal_reserves(areas, 'area_')
