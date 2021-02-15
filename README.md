@@ -1,4 +1,4 @@
-[![TravisCI](https://travis-ci.com/grid-parity-exchange/Egret.svg?branch=master)](https://travis-ci.com/grid-parity-exchange/Egret)
+![EGRET GitHub CI](https://github.com/grid-parity-exchange/Egret/workflows/EGRET%20GitHub%20CI/badge.svg)
 
 ## EGRET Overview
 

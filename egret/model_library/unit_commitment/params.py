@@ -38,7 +38,7 @@ def _verify_must_run_t0_state_consistency(model):
                 for t in range(m.TimePeriods.first(), value(m.InitialTimePeriodsOnLine[g])+m.TimePeriods.first()):
                     fixed_commitment = value(m.FixedCommitment[g,t])
                     if (fixed_commitment is not None) and (fixed_commitment == 0):
-                        print("DATA ERROR: The generator %s has been flagged as off at time %d, but its T0 state=%d is inconsistent with its minimum up time=%d" % (g, t, t0_state, min_down_time))
+                        print("DATA ERROR: The generator %s has been flagged as off at time %d, but its T0 state=%d is inconsistent with its minimum up time=%d" % (g, t, t0_state, min_up_time))
                         return False
         return True
     
@@ -104,6 +104,7 @@ def load_params(model, model_data):
     shunts = dict(md.elements(element_type='shunt'))
     branches = dict(md.elements(element_type='branch'))
     interfaces = dict(md.elements(element_type='interface'))
+    contingencies = dict(md.elements(element_type='contingency'))
     storage = dict(md.elements(element_type='storage'))
     dc_branches = dict(md.elements(element_type='dc_branch'))
 
@@ -135,6 +136,7 @@ def load_params(model, model_data):
     model._shunts = shunts
     model._bus_gs_fixed_shunts = bus_gs_fixed_shunts
     model._interfaces = interfaces
+    model._contingencies = contingencies
     model._dc_branches = dc_branches
     #model._TimeMapper = TimeMapper
 
@@ -281,7 +283,6 @@ def load_params(model, model_data):
 
     model.InterfaceLimitPenalty = Param(model.InterfacesWithSlack, within=NonNegativeReals, initialize=_interface_penalties)
   
-    
     ##########################################################
     # string indentifiers for the set of thermal generators. #
     # and their locations. (S)                               #
@@ -1249,6 +1250,11 @@ def load_params(model, model_data):
     
     model.LoadMismatchPenalty = Param(within=NonNegativeReals, mutable=True, initialize=system.get('load_mismatch_cost', BigPenalty))
     model.LoadMismatchPenaltyReactive = Param(within=NonNegativeReals, mutable=True, initialize=system.get('q_load_mismatch_cost', BigPenalty/2.))
+
+    model.Contingencies = Set(initialize=contingencies.keys())
+
+    # leaving this unindexed for now for simpility
+    model.ContingencyLimitPenalty = Param(within=NonNegativeReals, initialize=system.get('contingency_flow_violation_cost', BigPenalty/2.), mutable=True)
 
     #
     # STORAGE parameters
