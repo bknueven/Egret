@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
   from typing import Dict
+  from typing import Tuple 
   from pandas import DataFrame
   from datetime import datetime
 
@@ -27,6 +28,7 @@ class ParsedCache():
     def __init__(self, model_skeleton:dict, 
                  begin_time:datetime, end_time:datetime,
                  minutes_per_day_ahead_period:int, minutes_per_real_time_period:int,
+                 reserve_products_day_ahead:Tuple[str], reserve_prodcuts_real_time:Tuple[str],
                  timeseries_data:DataFrame,
                  load_participation_factors:Dict[str,float]):
         self.skeleton = model_skeleton
@@ -36,6 +38,10 @@ class ParsedCache():
         self.minutes_per_period = {
             'DAY_AHEAD': minutes_per_day_ahead_period,
             'REAL_TIME': minutes_per_real_time_period
+        }
+        self.reserve_products = {
+            'DAY_AHEAD': reserve_products_day_ahead,
+            'REAL_TIME': reserve_prodcuts_real_time,
         }
         self.load_participation_factors = load_participation_factors
 
@@ -64,10 +70,21 @@ class ParsedCache():
         self.populate_skeleton_with_data(md, simulation_type, begin_time, end_time)
         return ModelData(md)
 
-    def get_new_skeleton(self) -> dict:
+    def get_new_skeleton(self, simulation_type:str) -> dict:
         """ Get a new model dict with system elements but no time-specific data
+
+        Parameters
+        ----------
+        simulation_type:str
+            Either 'DAY_AHEAD' or 'REAL_TIME'
         """
-        return copy.deepcopy(self.skeleton)
+        new_skeleton = copy.deepcopy(self.skeleton)
+        supported_reserves = { reserve_name_map[res_type] for res_type 
+                                in self.reserve_products[simulation_type] }
+        for k in new_skeleton['system']:
+            if '_requirement' in k and k not in supported_reserves:
+                del new_skeleton['system'][k]
+        return new_skeleton
 
     def populate_skeleton_with_data(self, skeleton_dict:dict, simulation_type:str, 
                                     begin_time:datetime, end_time:datetime) -> None:
@@ -106,7 +123,7 @@ class ParsedCache():
             elif category == 'Area':
                 self._process_area_timeseries(md, begin_time, end_time, i)
             elif category == 'Reserve':
-                self._process_reserve_timeseries(md, begin_time, end_time, i)
+                self._process_reserve_timeseries(md, simulation_type, begin_time, end_time, i)
 
     def _process_generator_timeseries(self, md:dict, begin_time:datetime, 
                                       end_time:datetime, df_index:int):
@@ -156,8 +173,9 @@ class ParsedCache():
                 load_dict['q_load'] = { 'data_type': 'time_series',
                                         'values' : [v*q_over_p for v in load_dict['p_load']['values']] }
 
-    def _process_reserve_timeseries(self, md:dict, begin_time:datetime, 
-                                    end_time:datetime, df_index:int):
+        def _process_reserve_timeseries(self, md:dict, simulation_type:str,
+                                        begin_time:datetime, end_time:datetime,
+                                        df_index:int):
         df = self.timeseries_df
         i = df_index
 
@@ -171,9 +189,13 @@ class ParsedCache():
             res_name, area_name = res_name.split("_R", 1)
             target_dict = md['elements']['area'][area_name]
 
-        data = df.iat[i, df.columns.get_loc('Series')][begin_time:end_time]
-        target_dict[reserve_name_map[res_name]] = { 'data_type': 'time_series',
+        if res_name in self.reserve_products[simulation_type]:
+            data = df.iat[i, df.columns.get_loc('Series')][begin_time:end_time]
+            target_dict[reserve_name_map[res_name]] = { 'data_type': 'time_series',
                                                     'values' : data.to_list() }
+        else:
+            if reserve_name_map[res_name] in target_dict:
+                del target_dict[reserve_name_map[res_name]]
 
     def _insert_system_data(self, md:dict, simulation_type:str, 
                             begin_time:datetime, end_time:datetime):

@@ -133,6 +133,8 @@ def parse_to_cache(rts_gmlc_dir:str,
 
     data_start, data_end = _get_data_date_range(metadata_df)
 
+    reserve_products_day_ahead, reserve_prodcuts_real_time = _get_data_reserve_products(metadata_df)
+
     begin_time, end_time = _parse_datetimes_if_strings(begin_time, end_time)
     # TODO: Validate begin_time and end_time.
     #       Do we want to enforce that they fall within the data date range?
@@ -146,6 +148,7 @@ def parse_to_cache(rts_gmlc_dir:str,
 
     return ParsedCache(model_data, begin_time, end_time,
                        minutes_per_period['DAY_AHEAD'], minutes_per_period['REAL_TIME'], 
+                       reserve_products_day_ahead, reserve_prodcuts_real_time,
                        timeseries_df, load_participation_factors)
     
     
@@ -183,6 +186,22 @@ def _get_data_date_range(metadata_df) -> Tuple[datetime, datetime]:
                    _extract_end_date('REAL_TIME'))
 
     return (data_start, data_end)
+
+def _get_data_reserve_products(metadata_df) -> Tuple[Tuple[str], Tuple[str]]:
+    ''' Get the reserve product definitions for day-ahead and real-time
+    '''
+    def _extract_reserves(which:str):
+        if 'Reserve_Products' not in metadata_df.index:
+            return tuple()
+        reserve_str = metadata_df.loc['Reserve_Products', which]
+        if reserve_str[0] == '(':
+            reserve_str = reserve_str[1:]
+        if reserve_str[-1] == ')':
+            reserve_str = reserve_str[:-1]
+        reserves = reserve_str.split(',')
+        return tuple( r.strip(' ') for r in reserves )
+
+    return (_extract_reserves('DAY_AHEAD'), _extract_reserves('REAL_TIME'))
 
 def _read_timeseries_file(file_name:str, minutes_per_period:int,
                           start_time:datetime, end_time:datetime,
