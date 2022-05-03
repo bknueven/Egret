@@ -499,7 +499,7 @@ def load_params(model, model_data, slack_type):
     # you can enter generator limits either once for the generator or for each period (or just take 0)
     
     model.MinimumPowerOutput = Param(model.ThermalGenerators, model.TimePeriods, 
-                                        within=NonNegativeReals, 
+                                        within=Reals, 
                                         initialize=TimeMapper(thermal_gen_attrs['p_min']),
                                         default=0.0)
     
@@ -507,7 +507,7 @@ def load_params(model, model_data, slack_type):
        return v >= value(m.MinimumPowerOutput[g,t])
     
     model.MaximumPowerOutput = Param(model.ThermalGenerators, model.TimePeriods, 
-                                        within=NonNegativeReals, 
+                                        within=Reals, 
                                         validate=maximum_power_output_validator, 
                                         initialize=TimeMapper(thermal_gen_attrs['p_max']),
                                         default=0.0)
@@ -671,7 +671,7 @@ def load_params(model, model_data, slack_type):
         if len(startup_curve) > min_down_time:
             logger.warn(f"Truncating startup_curve longer than scaled minimum down time {min_down_time} for generator {g}")
         return startup_curve[0:min_down_time]
-    model.StartupCurve = Set(model.ThermalGenerators, within=NonNegativeReals, ordered=True, initialize=startup_curve_init_rule)
+    model.StartupCurve = Set(model.ThermalGenerators, within=Reals, ordered=True, initialize=startup_curve_init_rule)
 
     def shutdown_curve_init_rule(m,g):
         shutdown_curve = thermal_gens[g].get('shutdown_curve')
@@ -681,7 +681,7 @@ def load_params(model, model_data, slack_type):
         if len(shutdown_curve) > min_down_time:
             logger.warn(f"Truncating shutdown_curve longer than scaled minimum down time {min_down_time} for generator {g}")
         return shutdown_curve[0:min_down_time]
-    model.ShutdownCurve = Set(model.ThermalGenerators, within=NonNegativeReals, ordered=True, initialize=shutdown_curve_init_rule)
+    model.ShutdownCurve = Set(model.ThermalGenerators, within=Reals, ordered=True, initialize=shutdown_curve_init_rule)
     
     ####################################################################
     # generator power output at t=0 (initial condition). units are MW. #
@@ -719,7 +719,7 @@ def load_params(model, model_data, slack_type):
             return 0.
 
     model.PowerGeneratedT0 = Param(model.ThermalGenerators, 
-                                   within=NonNegativeReals,
+                                   within=Reals,
                                    validate=power_generated_t0_validator,
                                    mutable=True,
                                    initialize=power_generated_t0_initializer)
@@ -740,14 +740,14 @@ def load_params(model, model_data, slack_type):
 
     model.StartupRampLimit = Param(model.ThermalGenerators, 
                                     model.TimePeriods,
-                                    within=NonNegativeReals,
+                                    within=Reals,
                                     default=startup_ramp_default,
                                     validate=ramp_limit_validator,
                                     mutable=True,
                                     initialize=TimeMapper(thermal_gen_attrs.get('startup_capacity', dict())))
     model.ShutdownRampLimit = Param(model.ThermalGenerators, 
                                     model.TimePeriods,
-                                    within=NonNegativeReals,
+                                    within=Reals,
                                     default=shutdown_ramp_default, 
                                     validate=ramp_limit_validator,
                                     mutable=True,
@@ -759,8 +759,12 @@ def load_params(model, model_data, slack_type):
     ##        can't ramp down more than the pmax from the prior time period
     def scale_ramp_up(m, g, t):
         temp = m.NominalRampUpLimit[g] * m.TimePeriodLengthHours
-        if value(temp) > value(m.MaximumPowerOutput[g,t]):
-            return m.MaximumPowerOutput[g,t]
+        if t == m.InitialTime:
+            param = m.MaximumPowerOutput[g,t] - m.PowerGeneratedT0[g]
+        else:
+            param = m.MaximumPowerOutput[g,t] - m.MinimumPowerOutput[g,t-1]
+        if value(temp) > value(param):
+            return max(value(param), 0.)
         else:
             return temp
     model.ScaledNominalRampUpLimit = Param(model.ThermalGenerators, model.TimePeriods,  within=NonNegativeReals, initialize=scale_ramp_up, mutable=True)
@@ -768,11 +772,11 @@ def load_params(model, model_data, slack_type):
     def scale_ramp_down(m, g, t):
         temp = m.NominalRampDownLimit[g] * m.TimePeriodLengthHours
         if t == m.InitialTime:
-            param = max(value(m.PowerGeneratedT0[g]), value(m.MaximumPowerOutput[g,t]))
+            param = m.PowerGeneratedT0[g] - m.MinimumPowerOutput[g,t]
         else:
-            param = m.MaximumPowerOutput[g,t-1]
+            param = m.MaximumPowerOutput[g,t-1] - m.MinimumPowerOutput[g,t]
         if value(temp) > value(param):
-            return param
+            return max(value(param), 0.)
         else:
             return temp
     model.ScaledNominalRampDownLimit = Param(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, initialize=scale_ramp_down, mutable=True)
@@ -786,7 +790,7 @@ def load_params(model, model_data, slack_type):
             return m.MaximumPowerOutput[g,t]
         else:
             return temp + m.MinimumPowerOutput[g,t]
-    model.ScaledStartupRampLimit = Param(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, validate=ramp_limit_validator, initialize=scale_startup_limit, mutable=True)
+    model.ScaledStartupRampLimit = Param(model.ThermalGenerators, model.TimePeriods, within=Reals, validate=ramp_limit_validator, initialize=scale_startup_limit, mutable=True)
     
     def scale_shutdown_limit(m, g, t):
         ## temp now has the "running room" over Pmin. This will be scaled for the time period length
@@ -797,7 +801,7 @@ def load_params(model, model_data, slack_type):
             return m.MaximumPowerOutput[g,t]
         else:
             return temp + m.MinimumPowerOutput[g,t]
-    model.ScaledShutdownRampLimit = Param(model.ThermalGenerators, model.TimePeriods, within=NonNegativeReals, validate=ramp_limit_validator, initialize=scale_shutdown_limit, mutable=True)
+    model.ScaledShutdownRampLimit = Param(model.ThermalGenerators, model.TimePeriods, within=Reals, validate=ramp_limit_validator, initialize=scale_shutdown_limit, mutable=True)
 
     ## Some additional ramping parameters to 
     ## deal with shutdowns at time=1
@@ -810,7 +814,7 @@ def load_params(model, model_data, slack_type):
             return m.MinimumPowerOutput[g,m.InitialTime]
 
     model.MinimumPowerOutputT0 = Param(model.ThermalGenerators, 
-                                    within=NonNegativeReals, 
+                                    within=Reals, 
                                     mutable=True,
                                     initialize=_init_p_min_t0)
 
@@ -821,7 +825,7 @@ def load_params(model, model_data, slack_type):
         return m.ShutdownRampLimit[g,m.InitialTime]
 
     model.ShutdownRampLimitT0 = Param(model.ThermalGenerators,
-                                    within=NonNegativeReals,
+                                    within=Reals,
                                     mutable=True,
                                     initialize=_init_sd_t0)
     
@@ -834,7 +838,7 @@ def load_params(model, model_data, slack_type):
             return m.PowerGeneratedT0[g]
         else:
             return temp + m.MinimumPowerOutputT0[g]
-    model.ScaledShutdownRampLimitT0 = Param(model.ThermalGenerators, within=NonNegativeReals, initialize=scale_shutdown_limit_t0, mutable=True)
+    model.ScaledShutdownRampLimitT0 = Param(model.ThermalGenerators, within=Reals, initialize=scale_shutdown_limit_t0, mutable=True)
 
     ###############################################
     # startup cost parameters for each generator. #
@@ -1007,13 +1011,6 @@ def load_params(model, model_data, slack_type):
                 curve_t = curve
                 _t = None
 
-            tx_utils.validate_and_clean_cost_curve(curve_t,
-                                                   curve_type=curve_type,
-                                                   p_min=value(m.MinimumPowerOutput[g, t]),
-                                                   p_max=value(m.MaximumPowerOutput[g, t]),
-                                                   gen_name=g,
-                                                   t=_t)
-
             # if no curve_type+'_type' is specified, we assume piecewise (for backwards
             # compatibility with no 'fuel_curve_type')
             if curve_type + '_type' in curve and \
@@ -1040,24 +1037,12 @@ def load_params(model, model_data, slack_type):
         if cost is not None and fuel is not None:
             logger.warning("WARNING: ignoring provided p_cost and using fuel cost data from p_fuel for generator {}".format(g))
 
-        ## look at p_cost through time
         if fuel is None:
             _check_curve(m, g, cost, 'cost_curve')
         else:
             if fuel_cost is None:
                 raise Exception("Found fuel_curve but not fuel_cost for generator {}".format(g))
             _check_curve(m, g, fuel, 'fuel_curve')
-            for i, t in enumerate(m.TimePeriods):
-                if fuel_cost is dict:
-                    if fuel_cost['data_type'] != 'time_series':
-                        raise Exception("fuel_cost must be either numeric or time_series")
-                    fuel_cost_t = fuel_cost['values'][i]
-                else:
-                    fuel_cost_t = fuel_cost
-                if fuel_cost_t < 0:
-                    raise Exception("fuel_cost must be non-negative, found negative fuel_cost for generator {}".format(g))
-                if fuel_cost_t == fuel_cost:
-                    break
         return True
 
     model.ValidateGeneratorCost = BuildCheck(model.ThermalGenerators, rule=validate_cost_rule)
@@ -1095,103 +1080,23 @@ def load_params(model, model_data, slack_type):
     _minimum_production_cost = {}
     _minimum_fuel_consumption = {}
 
+    def _piecewise_adjustment_helper(m, g, p_min, p_max, curve, curve_type, t):
 
-    def _eliminate_piecewise_duplicates(input_func):
-        if len(input_func) <= 1:
-            return input_func
-        new = [input_func[0]]
-        for (o1, c1), (o2, c2) in zip(input_func, input_func[1:]):
-            if not math.isclose(o1,o2) and not math.isclose(c1,c2):
-                new.append((o2,c2))
-        return new
+        cleaned_values = tx_utils.validate_and_clean_cost_curve(curve,
+                                              curve_type=curve_type,
+                                              p_min=p_min,
+                                              p_max=p_max,
+                                              gen_name=g,
+                                              t=t)
 
-    def _much_less_than(v1, v2):
-        return v1 < v2 and not math.isclose(v1,v2)
+        p_min, p_min_cost = cleaned_values[0]
+        new_points = [0.,]
+        new_vals = [0.,]
+        for pnt, val in cleaned_values[1:]:
+            new_points.append(pnt-p_min)
+            new_vals.append(val-p_min_cost)
 
-    def _piecewise_adjustment_helper(m, p_min, p_max, input_func):
-
-        minimum_val = 0.
-        new_points = []
-        new_vals = []
-
-        input_func = _eliminate_piecewise_duplicates(input_func)
-
-        set_p_min = False
-
-        # NOTE: this implicitly inserts a (0.,0.)
-        #       into every cost array
-        prior_output, prior_cost = 0., 0. 
-
-        for output, cost in input_func:
-            ## catch this case
-            if math.isclose(output, p_min) and math.isclose(output, p_max):
-                new_points.append(0.)
-                new_vals.append(0.)
-                minimum_val = cost
-                break
-
-            ## output < p_min
-            elif _much_less_than(output, p_min):
-                pass
-
-            ## p_min == output
-            elif math.isclose(output, p_min):
-                assert set_p_min is False
-                new_points.append(0.)
-                new_vals.append(0.)
-                minimum_val = cost
-                set_p_min = True
-
-            ## p_min < output
-            elif _much_less_than(p_min, output) and _much_less_than(output, p_max):
-                if not set_p_min:
-                    new_points.append(0.)
-                    new_vals.append(0.)
-
-                    price = ((cost-prior_cost)/(output-prior_output))
-                    minimum_val = (p_min - prior_output) * price + prior_cost
-                    
-                    new_points.append( output - p_min )
-                    new_vals.append( (output - p_min) * price )
-
-                    set_p_min = True
-                else:
-                    new_points.append( output - p_min )
-                    new_vals.append( cost - minimum_val )
-
-            elif math.isclose(output, p_max) or _much_less_than(p_max, output):
-                if not set_p_min:
-                    new_points.append(0.)
-                    new_vals.append(0.)
-
-                    price = ((cost-prior_cost)/(output-prior_output))
-                    minimum_val = (p_min - prior_output) * price + prior_cost
-                    
-                    new_points.append( p_max - p_min )
-
-                    if math.isclose(output, p_max):
-                        new_vals.append( cost - minimum_val )
-                    else:
-                        new_vals.append( (p_max - p_min) * price )
-                    set_p_min = True
-
-                else:
-                    new_points.append( p_max - p_min )
-                    if math.isclose(output, p_max):
-                        new_vals.append( cost - minimum_val )
-                    else:
-                        price = ((cost-prior_cost)/(output-prior_output))
-                        new_vals.append( (p_max - prior_output) * price + prior_cost - minimum_val )
-
-                break
-
-            else:
-                raise Exception("Unexpected case in _piecewise_adjustment_helper, "
-                                "p_min={}, p_max={}, output={}".format(p_min, p_max, output))
-            
-            prior_output, prior_cost = output, cost
-
-        return new_points, new_vals, minimum_val
+        return new_points, new_vals, p_min_cost 
 
     def _polynomial_to_piecewise_helper(m, p_min, p_max, input_func):
         segment_max = value(m.NumGeneratorCostCurvePieces)
@@ -1227,12 +1132,13 @@ def load_params(model, model_data, slack_type):
 
         return new_points, new_vals, minimum_val
 
-    def _piecewise_helper(m, p_min, p_max, curve, curve_type):
+    def _piecewise_helper(m, g, p_min, p_max, curve, curve_type, t):
         if curve_type not in curve or \
                 curve[curve_type] == 'piecewise':
-            return _piecewise_adjustment_helper(m, p_min, p_max, curve['values']) 
+            return _piecewise_adjustment_helper(m, g, p_min, p_max, curve, curve['data_type'], t)
         else:
             assert curve[curve_type] == 'polynomial'
+            tx_utils.validate_and_clean_cost_curve(curve, curve['data_type'], p_min, p_max, g, t)
             return _polynomial_to_piecewise_helper(m, p_min, p_max, curve['values']) 
 
     
@@ -1289,7 +1195,7 @@ def load_params(model, model_data, slack_type):
                             m.PowerGenerationPiecewiseCostValues[g,t] = curve['cost_values']
                         continue
                     
-                points, values, minimum_val = _piecewise_helper(m, p_min, p_max, fuel_curve, 'fuel_curve_type')
+                points, values, minimum_val = _piecewise_helper(m, g, p_min, p_max, fuel_curve, 'fuel_curve_type',t)
                 
                 curve = { 'points' : points }
 
@@ -1346,7 +1252,7 @@ def load_params(model, model_data, slack_type):
                     values = [0., 0.]
                 min_production = nlc
             else:
-                points, values, minimum_val = _piecewise_helper(m, p_min, p_max, cost_curve, 'cost_curve_type')
+                points, values, minimum_val = _piecewise_helper(m, g, p_min, p_max, cost_curve, 'cost_curve_type', t)
                 min_production = minimum_val + nlc
     
             curve = {'points':points, 'cost_values':values, 'min_production':min_production}
