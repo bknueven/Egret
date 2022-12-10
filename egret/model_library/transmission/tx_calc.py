@@ -1068,8 +1068,8 @@ def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_b
     Jc = _calculate_pf_constant(branches,buses,index_set_branch,base_point)
     Lc = _calculate_pfl_constant(branches,buses,index_set_branch,base_point)
 
-    if np.all(Jc == 0) and np.all(Lc == 0):
-        return np.zeros((_len_branch, _len_bus)), np.zeros((_len_branch, _len_bus)), np.zeros((1,_len_branch))
+    #if np.all(Jc == 0) and np.all(Lc == 0):
+    #    return np.zeros((_len_branch, _len_bus)), np.zeros((_len_branch, _len_bus)), np.zeros((1,_len_branch))
 
     ## check if the network is connected
     graph = construct_connection_graph(branches, mapping_bus_to_idx)
@@ -1080,6 +1080,11 @@ def calculate_ptdf_ldf(branches,buses,index_set_branch,index_set_bus,reference_b
     M1 = A@J
     M2 = AA@L
     M = M1 + 0.5 * M2
+    np.set_printoptions(linewidth=1000)
+
+    #print(J.A)
+    #print(L.A)
+    print(M.A)
 
     ref_bus_row = sp.coo_matrix(([1],([0],[_ref_bus_idx])), shape=(1,_len_bus))
     ref_bus_col = sp.coo_matrix(([1],([_ref_bus_idx],[0])), shape=(_len_bus,1))
@@ -1206,12 +1211,12 @@ def calculate_adjacency_matrix_transpose(branches,index_set_branch,index_set_bus
         from_bus = branch['from_bus']
         row.append(mapping_bus_to_idx[from_bus])
         col.append(idx_col)
-        data.append(-1)
+        data.append(1)
 
         to_bus = branch['to_bus']
         row.append(mapping_bus_to_idx[to_bus])
         col.append(idx_col)
-        data.append(1)
+        data.append(-1)
 
     adjacency_matrix = sp.coo_matrix((data,(row,col)), shape=(_len_bus, _len_branch))
     return adjacency_matrix.tocsc()

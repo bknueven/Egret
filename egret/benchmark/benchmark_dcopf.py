@@ -6,7 +6,7 @@ from egret.models.dcopf import (solve_dcopf,
         )
 from egret.data.model_data import ModelData
 
-solver = "xpress_persistent"
+solver = "gurobi_direct"
 if len(sys.argv) < 3:
     print("Useage: python benchmark_ptdf.py matpower_file dcopf_type")
     print("""dcopf_type is one of "btheta", "fullptdf", "virtualptdf" """)
