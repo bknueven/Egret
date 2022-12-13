@@ -314,8 +314,8 @@ def _calculate_J11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
         elif base_point == BasePointType.SOLUTION:
             vn = buses[from_bus]['vm']
             vm = buses[to_bus]['vm']
-            tn = buses[from_bus]['va']
-            tm = buses[to_bus]['va']
+            tn = math.radians(buses[from_bus]['va'])
+            tm = math.radians(buses[to_bus]['va'])
 
         val = -b * vn * vm * cos(tn - tm + shift)
 
@@ -367,8 +367,8 @@ def _calculate_J22(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
         elif base_point == BasePointType.SOLUTION:
             vn = buses[from_bus]['vm']
             vm = buses[to_bus]['vm']
-            tn = buses[from_bus]['va']
-            tm = buses[to_bus]['va']
+            tn = math.radians(buses[from_bus]['va'])
+            tm = math.radians(buses[to_bus]['va'])
 
         val = -(b + bc/2) * vn / (tau**2) - g * vm * sin(tn - tm + shift)/tau
 
@@ -424,8 +424,8 @@ def _calculate_L11(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
         elif base_point == BasePointType.SOLUTION:
             vn = buses[from_bus]['vm']
             vm = buses[to_bus]['vm']
-            tn = buses[from_bus]['va']
-            tm = buses[to_bus]['va']
+            tn = math.radians(buses[from_bus]['va'])
+            tm = math.radians(buses[to_bus]['va'])
 
         val = 2 * g * vn * vm * sin(tn - tm + shift)
 
@@ -477,8 +477,8 @@ def _calculate_L22(branches,buses,index_set_branch,index_set_bus,mapping_bus_to_
         elif base_point == BasePointType.SOLUTION:
             vn = buses[from_bus]['vm']
             vm = buses[to_bus]['vm']
-            tn = buses[from_bus]['va']
-            tm = buses[to_bus]['va']
+            tn = math.radians(buses[from_bus]['va'])
+            tm = math.radians(buses[to_bus]['va'])
 
         val = -2 * (b + bc/2) * vn / (tau**2) + 2 * b * vm * cos(tn - tm + shift)/tau
 
@@ -712,8 +712,8 @@ def _calculate_pf_constant(branches,buses,index_set_branch,base_point=BasePointT
         elif base_point == BasePointType.SOLUTION:
             vn = buses[from_bus]['vm']
             vm = buses[to_bus]['vm']
-            tn = buses[from_bus]['va']
-            tm = buses[to_bus]['va']
+            tn = math.radians(buses[from_bus]['va'])
+            tm = math.radians(buses[to_bus]['va'])
 
         pf_constant[idx_row] = 0.5 * g * ((vn/tau) ** 2 - vm ** 2) \
                                - b * vn * vm * sin(tn - tm + shift) \
@@ -755,8 +755,8 @@ def _calculate_qf_constant(branches,buses,index_set_branch,base_point=BasePointT
         elif base_point == BasePointType.SOLUTION:
             vn = buses[from_bus]['vm']
             vm = buses[to_bus]['vm']
-            tn = buses[from_bus]['va']
-            tm = buses[to_bus]['va']
+            tn = math.radians(buses[from_bus]['va'])
+            tm = math.radians(buses[to_bus]['va'])
 
         qf_constant[idx_row] = 0.5 * (b+bc/2) * (vn**2/tau**2 - vm**2) \
                                + g * vn * vm * sin(tn - tm + shift)/tau
@@ -798,8 +798,8 @@ def _calculate_pfl_constant(branches,buses,index_set_branch,base_point=BasePoint
         elif base_point == BasePointType.SOLUTION:
             vn = buses[from_bus]['vm']
             vm = buses[to_bus]['vm']
-            tn = buses[from_bus]['va']
-            tm = buses[to_bus]['va']
+            tn = math.radians(buses[from_bus]['va'])
+            tm = math.radians(buses[to_bus]['va'])
 
         pfl_constant[idx_row] = g2 * (vn ** 2) + _g * (vm ** 2) \
                                         - 2 * g * vn * vm * cos(tn - tm + shift) \
@@ -841,8 +841,8 @@ def _calculate_qfl_constant(branches,buses,index_set_branch,base_point=BasePoint
         elif base_point == BasePointType.SOLUTION:
             vn = buses[from_bus]['vm']
             vm = buses[to_bus]['vm']
-            tn = buses[from_bus]['va']
-            tm = buses[to_bus]['va']
+            tn = math.radians(buses[from_bus]['va'])
+            tm = math.radians(buses[to_bus]['va'])
 
         qfl_constant[idx_row] = (b+bc/2) * ((vn/tau)**2 + vm**2) \
                                - 2 * b * vn * vm * cos(tn - tm + shift) / tau
@@ -1366,7 +1366,6 @@ def implicit_calc_q_sens(branches,buses,index_set_branch,index_set_bus,reference
             pass
 
     print('Could not find q-sensitivity dictionaries. Calculating...', end =" ")
-    start = time.clock()
 
     # use active branch/bus mapping for large test cases
     _len_bus = len(index_set_bus)
@@ -1390,9 +1389,17 @@ def implicit_calc_q_sens(branches,buses,index_set_branch,index_set_bus,reference
     AA = calculate_absolute_adjacency_matrix(A)
     I = sp.sparse.coo_matrix(np.identity(_len_bus))
     e = np.zeros((_len_bus,1))
+    #print("H:")
+    #print(G.A)
+    #print("H0:")
+    #print(G0)
 
     M = A @ G + 0.5 * AA @ K
     M0 = A @ G0 + 0.5 * AA @ K0
+    #print("M:")
+    #print(M.A)
+    #print("M0:")
+    #print(M0)
     # M_ref = remove_reference_bus_row(M, mapping_bus_to_idx, reference_bus, _len_bus)
 
     #----- calculate PTDFs by solving M^T * PTDF^T = -F^T  -----#
@@ -1404,6 +1411,10 @@ def implicit_calc_q_sens(branches,buses,index_set_branch,index_set_bus,reference
 
     VDF = implicit_factor_solve(M, -I, index_set_bus, active_index_set=active_index_set_bus)
     V_constant = VDF @ M0
+
+    # bk -- calculate more directly
+    QT_constant = G @ V_constant + G0
+    QL_constant = K @ V_constant + K0
 
     # set constants of inactive branches and buses to basepoint values
     _inactive_mapping_branch = {name: idx for idx, name in enumerate(index_set_branch) if name not in active_index_set_branch}
@@ -1420,7 +1431,9 @@ def implicit_calc_q_sens(branches,buses,index_set_branch,index_set_bus,reference
     QLF_const = QLF @ M0 + sum(K0)
 
     #----- calculate branch loss distribution factors -----#
-    branch_qloss = [branch['qf'] + branch['qt'] if branch['pt'] is not None else 0 for bn,branch in branches.items()]
+    #branch_qloss = [branch['qf'] + branch['qt'] if branch['pt'] is not None else 0 for bn,branch in branches.items()]
+    # BK -- changing for now
+    branch_qloss = [0 for bn,branch in branches.items()]
     total_qloss = sum(branch_qloss)
     if total_qloss > 0:
         qloss_dist = [ qloss / total_qloss for qloss in branch_qloss ]
@@ -1429,24 +1442,23 @@ def implicit_calc_q_sens(branches,buses,index_set_branch,index_set_bus,reference
 
 
     sens_dict = {}
-    sens_dict['qtdf'] = QTDF.astype(np.float32)
-    sens_dict['qtdf_c'] = QT_constant.astype(np.float32)
-    sens_dict['qldf'] = QLDF.astype(np.float32)
-    sens_dict['qldf_c'] = QL_constant.astype(np.float32)
-    sens_dict['vdf'] = VDF.astype(np.float32)
-    sens_dict['vdf_c'] = V_constant.astype(np.float32)
+    sens_dict['qtdf'] = QTDF
+    sens_dict['qtdf_c'] = QT_constant
+    sens_dict['qldf'] = QLDF
+    sens_dict['qldf_c'] = QL_constant
+    sens_dict['vdf'] = VDF
+    sens_dict['vdf_c'] = V_constant
     sens_dict['qloss_sens'] = QLF
     sens_dict['qloss_const'] = QLF_const
     sens_dict['qloss_resid_sens'] = QLF - sum(QLDF)
     sens_dict['qloss_resid_const'] = QLF_const - sum(QL_constant)
     sens_dict['qloss_distribution'] = qloss_dist
-    sens_dict['nodal_jacobian_q'] = M.astype(np.float32)
-    sens_dict['offset_jacobian_q'] = M0.astype(np.float32)
+    sens_dict['nodal_jacobian_q'] = M
+    sens_dict['offset_jacobian_q'] = M0
 
-    elapsed = time.clock() - start
-    print('it took {} seconds.'.format(elapsed))
-    if filename is not None:
-        save_sens_mat(sens_dict, 'q_sens_' + filename)
+    #print('it took {} seconds.'.format(elapsed))
+    #if filename is not None:
+    #    save_sens_mat(sens_dict, 'q_sens_' + filename)
 
     return sens_dict
 
