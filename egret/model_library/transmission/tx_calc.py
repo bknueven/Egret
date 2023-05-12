@@ -1370,7 +1370,7 @@ def implicit_calc_q_sens(branches,buses,index_set_branch,index_set_bus,reference
     # use active branch/bus mapping for large test cases
     _len_bus = len(index_set_bus)
     _len_branch = len(index_set_branch)
-    if _len_bus > 1000 and base_point==BasePointType.SOLUTION:
+    if False and _len_bus > 1000 and base_point==BasePointType.SOLUTION:
         _len_cycle = _len_branch - _len_bus + 1
         active_index_set_branch = reduce_branches(branches, _len_cycle)
         active_index_set_bus = reduce_buses(buses, _len_bus / 4)
@@ -1553,7 +1553,7 @@ def calculate_ptdf_pldf(branches,buses,index_set_branch,index_set_bus,reference_
     J0 = sp.sparse.bmat([[M,ref_bus_col],[ref_bus_row,0]], format='coo')
 
     # use sparse branch/bus mapping for large test cases
-    if _len_bus > 1000:   # change to 1000 after debugging....
+    if False and _len_bus > 1000:   # change to 1000 after debugging....
         _len_cycle = _len_branch - _len_bus + 1
         active_index_set_branch = reduce_branches(branches, _len_cycle)
 
